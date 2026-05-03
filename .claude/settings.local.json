@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-Content \"C:\\\\Users\\\\tomas.tuzar.TUZARNB2\\\\OneDrive - International TMR services s.r.o\\\\Plocha\\\\realitybot\\\\report.py\")",
+      "Bash(Measure-Object -Line)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(head *)"
+    ]
+  }
+}

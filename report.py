@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import decode_header
+from urllib.parse import unquote, urlparse, parse_qs
 from bs4 import BeautifulSoup
 
 def get_najmy(locality_district_id):
@@ -78,9 +79,25 @@ def vytahni_dispozici(text):
 def vytahni_url(soup):
     for a in soup.find_all("a", href=True):
         href = a["href"]
-        if "sreality" in href or "visidoo" in href or "bezrealitky" in href:
-            return href
+        if "api.visidoo.com/track" in href and "url=" in href:
+            try:
+                params = parse_qs(urlparse(href).query)
+                real_url = params.get("url", [None])[0]
+                if real_url:
+                    real_url = unquote(real_url)
+                    if "sreality.cz/detail" in real_url or "reality.idnes.cz/detail" in real_url or "realitymat.cz/detail" in real_url:
+                        return real_url
+            except:
+                pass
     return None
+
+def navratnost_barva(n):
+    if n >= 10:
+        return "#22c55e"
+    elif n >= 7:
+        return "#eab308"
+    else:
+        return "#ef4444"
 
 # --- Stáhni nájmy ---
 print("Stahuji nájmy ze Sreality...")
@@ -93,3 +110,39 @@ mail.login("realitybot@seznam.cz", "Necum123")
 mail.select("inbox")
 
 vcera = (datetime.now() - timedelta(days=1)).strftime("%d-%b-%Y")
+_, messages = mail.search(None, f"SINCE {vcera}")
+
+print("=" * 50)
+print("BYTY Z POSLEDNÍCH 24 HODIN")
+print("=" * 50)
+
+for msg_id in messages[0].split():
+    _, msg_data = mail.fetch(msg_id, "(RFC822)")
+    msg = email.message_from_bytes(msg_data[0][1])
+
+    predmet = dekoduj(msg["subject"])
+    if "Fwd:" not in predmet:
+        continue
+
+    html = get_body(msg)
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text(separator=" ", strip=True)
+
+    cena = vytahni_cenu(text)
+    disp = vytahni_dispozici(predmet)
+    url = vytahni_url(soup)
+
+    if cena and disp and disp in najmy:
+        najem = najmy[disp]
+        rocni_najem = najem * 12
+        navratnost = (rocni_najem / cena) * 100
+        barva = navratnost_barva(navratnost)
+
+        print(f"\n{predmet.replace('Fwd: ', '')}")
+        print(f"  Cena:        {cena:,} Kč".replace(",", " "))
+        print(f"  Odh. nájem:  {najem:,.0f} Kč/měsíc".replace(",", " "))
+        print(f"  Návratnost:  {navratnost:.1f}%")
+        if url:
+            print(f"  URL:         {url}")
+
+mail.logout()
