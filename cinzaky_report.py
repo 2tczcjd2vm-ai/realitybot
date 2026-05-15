@@ -75,7 +75,9 @@ for inzerat in data["_embedded"]["estates"]:
     nazev = inzerat.get("name", "")
     lokalita = inzerat.get("locality", "")
     cena_raw = inzerat.get("price", 0)
-    odkaz = f"https://www.sreality.cz/detail/prodej/dum/bytovy-dum/{hash_id}"
+    seo = inzerat.get("seo", {})
+    seo_locality = seo.get("locality", "")
+    odkaz = f"https://www.sreality.cz/detail/prodej/komercni/cinzovni-dum/{seo_locality}/{hash_id}"
 
     cast_prahy = None
     for p in prahy.keys():
@@ -200,42 +202,37 @@ for v in vysledky:
 
     poznamka = "" if v["ma_plochu"] else '<div style="color:#f59e0b;font-size:11px;margin-top:4px">⚠️ Plocha odhadnuta z názvu, cena snížena o 20%</div>'
 
-    karty += f"""
-    <a href="{v['odkaz']}" style="text-decoration:none;color:inherit;" target="_blank">
-    <div style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {zisk_barva}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div style="flex:1;padding-right:12px">
-          <div style="font-weight:700;font-size:15px;color:#1d4ed8;margin-bottom:6px">{v['nazev']}{v['podil_text']}</div>
-          <div style="color:#6b7280;font-size:12px;margin-bottom:4px">📍 {v['lokalita']} · {v['cast_prahy']}</div>
-          <div style="color:#6b7280;font-size:13px">💰 Kupní cena: {kupni_fmt}</div>
-          <div style="color:#6b7280;font-size:13px">📐 Užitná plocha: {plocha_fmt}</div>
-          <div style="color:#6b7280;font-size:13px">🔨 Rekonstrukce: {rekonstrukce_fmt}</div>
-          <div style="color:#6b7280;font-size:13px">🏷️ Pot. prodejní cena: {prodej_fmt}</div>
-          {poznamka}
-        </div>
-        <div style="background:{zisk_barva};color:white;padding:8px 12px;border-radius:8px;font-weight:800;font-size:15px;white-space:nowrap;min-width:80px;text-align:center">
-          {zisk_fmt}
-        </div>
-      </div>
-    </div>
-    </a>"""
+    karty += (
+        f'<a href="{v["odkaz"]}" style="text-decoration:none;color:inherit;display:block;" target="_blank">'
+        f'<div style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {zisk_barva}">'
+        f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        f'<div style="flex:1;padding-right:12px">'
+        f'<div style="font-weight:700;font-size:15px;color:#1d4ed8;margin-bottom:6px">{v["nazev"]}{v["podil_text"]}</div>'
+        f'<div style="color:#6b7280;font-size:12px;margin-bottom:4px">📍 {v["lokalita"]} · {v["cast_prahy"]}</div>'
+        f'<div style="color:#6b7280;font-size:13px">💰 Kupní cena: {kupni_fmt}</div>'
+        f'<div style="color:#6b7280;font-size:13px">📐 Užitná plocha: {plocha_fmt}</div>'
+        f'<div style="color:#6b7280;font-size:13px">🔨 Rekonstrukce: {rekonstrukce_fmt}</div>'
+        f'<div style="color:#6b7280;font-size:13px">🏷️ Pot. prodejní cena: {prodej_fmt}</div>'
+        f'{poznamka}'
+        f'</div>'
+        f'<div style="background:{zisk_barva};color:white;padding:8px 12px;border-radius:8px;font-weight:800;font-size:15px;white-space:nowrap;min-width:80px;text-align:center">'
+        f'{zisk_fmt}</div></div></div></a>'
+    )
 
-html_report = f"""<!DOCTYPE html>
-<html>
-<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,sans-serif">
-  <div style="max-width:600px;margin:0 auto;padding:16px">
-    <div style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">
-      <h1 style="margin:0;color:white;font-size:22px">🏢 Činžovní domy Praha</h1>
-      <p style="margin:8px 0 0;color:#bfdbfe;font-size:14px">{datum} · {len(vysledky)} nemovitostí</p>
-    </div>
-    {karty}
-    <div style="text-align:center;padding:16px">
-      <p style="margin:0;color:#9ca3af;font-size:11px">Zisk = pot. prodejní cena minus kupní cena plus rekonstrukce · Ceny bytů z aktuálních inzerátů Sreality</p>
-    </div>
-  </div>
-</body>
-</html>"""
+html_report = (
+    "<!DOCTYPE html><html>"
+    '<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
+    '<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,sans-serif">'
+    '<div style="max-width:600px;margin:0 auto;padding:16px">'
+    '<div style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
+    f'<h1 style="margin:0;color:white;font-size:22px">🏢 Činžovní domy Praha</h1>'
+    f'<p style="margin:8px 0 0;color:#bfdbfe;font-size:14px">{datum} · {len(vysledky)} nemovitostí</p>'
+    "</div>"
+    f"{karty}"
+    '<div style="text-align:center;padding:16px">'
+    '<p style="margin:0;color:#9ca3af;font-size:11px">Zisk = pot. prodejní cena minus kupní cena plus rekonstrukce · Ceny bytů z aktuálních inzerátů Sreality</p>'
+    "</div></div></body></html>"
+)
 
 zprava = MIMEMultipart("alternative")
 zprava["Subject"] = f"🏢 Činžovní domy Praha – {len(vysledky)} nemovitostí · {datum}"

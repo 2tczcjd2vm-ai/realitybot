@@ -110,7 +110,7 @@ mail.login("realitybot@seznam.cz", "Necum123")
 mail.select("inbox")
 
 vcera = (datetime.now() - timedelta(days=1)).strftime("%d-%b-%Y")
-_, messages = mail.search(None, f"SINCE {vcera}")
+_, messages = mail.search(None, "ALL")
 
 print("=" * 50)
 print("BYTY Z POSLEDNÍCH 24 HODIN")
