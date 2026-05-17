@@ -219,8 +219,10 @@ else:
     zprava["To"] = "tomas.tuzar@seznam.cz"
     zprava.attach(MIMEText(html_report, "html"))
 
-    with smtplib.SMTP_SSL("smtp.seznam.cz", 465) as server:
-        server.login("realitybot@seznam.cz", "Necum123")
-        server.sendmail("realitybot@seznam.cz", "tomas.tuzar@seznam.cz", zprava.as_string())
-
-    print("Report odeslan - " + pocet + " bytu!")
+    try:
+        with smtplib.SMTP_SSL("smtp.seznam.cz", 465) as server:
+            server.login("realitybot@seznam.cz", "Necum123")
+            server.sendmail("realitybot@seznam.cz", "tomas.tuzar@seznam.cz", zprava.as_string())
+        print("Report odeslan - " + pocet + " bytu!")
+    except Exception as e:
+        print("CHYBA: " + str(e))
