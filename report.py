@@ -220,7 +220,7 @@ else:
     zprava.attach(MIMEText(html_report, "html"))
 
     try:
-        with smtplib.SMTP_SSL("smtp.seznam.cz", 465) as server:
+        with smtplib.SMTP_SSL("smtp.email.cz", 465) as server:
             server.login("realitybot@seznam.cz", "Necum123")
             server.sendmail("realitybot@seznam.cz", "tomas.tuzar@seznam.cz", zprava.as_string())
         print("Report odeslan - " + pocet + " bytu!")
