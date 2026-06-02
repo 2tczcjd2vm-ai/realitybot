@@ -1,9 +1,9 @@
+import os
 import requests
 import smtplib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
 
 def get_najmy(locality_district_id):
     url = "https://www.sreality.cz/api/v1/estates/search"
