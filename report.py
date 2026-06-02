@@ -1,38 +1,34 @@
-import imaplib
-import email
 import requests
-import re
 import smtplib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.header import decode_header
-from urllib.parse import unquote, urlparse, parse_qs
-from bs4 import BeautifulSoup
 
 
 def get_najmy(locality_district_id):
-    url = "https://www.sreality.cz/api/cs/v2/estates"
+    url = "https://www.sreality.cz/api/v1/estates/search"
     params = {
         "category_main_cb": 1,
         "category_type_cb": 2,
         "locality_district_id": locality_district_id,
-        "per_page": 60,
+        "locality_country_id": 112,
+        "locality_region_id": 4,
+        "limit": 60,
+        "offset": 0,
+        "lang": "cs",
     }
     headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(url, params=params, headers=headers)
     data = response.json()
 
     najmy = {}
-    for inzerat in data["_embedded"]["estates"]:
-        nazev = inzerat.get("name", "")
+    for inzerat in data.get("results", []):
         cena = inzerat.get("price", 0)
-        if cena and cena < 30000:
-            for disp in ["1+kk", "1+1", "2+kk", "2+1", "3+kk", "3+1"]:
-                if disp in nazev:
-                    if disp not in najmy:
-                        najmy[disp] = []
-                    najmy[disp].append(cena)
+        disp = inzerat.get("category_sub_cb", {}).get("name", "")
+        if cena and cena < 30000 and disp:
+            if disp not in najmy:
+                najmy[disp] = []
+            najmy[disp].append(cena)
 
     prumery = {}
     for disp, ceny in najmy.items():
@@ -40,55 +36,26 @@ def get_najmy(locality_district_id):
     return prumery
 
 
-def dekoduj(text):
-    parts = decode_header(text)
-    result = ""
-    for part, encoding in parts:
-        if isinstance(part, bytes):
-            result += part.decode(encoding or "utf-8")
-        else:
-            result += part
-    return result
-
-
-def get_body(msg):
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/html":
-                return part.get_payload(decode=True).decode("utf-8", errors="ignore")
-    else:
-        return msg.get_payload(decode=True).decode("utf-8", errors="ignore")
-
-
-def vytahni_cenu(text):
-    matches = re.findall(r"([\d\s\xa0]+)\s*Kč", text)
-    ceny = []
-    for m in matches:
-        try:
-            cislo = int(re.sub(r'\s+', '', m).replace("\xa0", ""))
-            if 200000 < cislo < 10000000:
-                ceny.append(cislo)
-        except:
-            pass
-    if ceny:
-        return min(ceny)
-    return None
-
-
-def vytahni_dispozici(text):
-    for disp in ["1+kk", "1+1", "2+kk", "2+1", "3+kk", "3+1"]:
-        if disp in text:
-            return disp
-    return None
-
-
-def vytahni_url(soup):
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        nazev = a.get_text(strip=True)
-        if "Prodej" in nazev and "byt" in nazev.lower():
-            return href
-    return None
+def get_nove_byty(locality_district_id):
+    url = "https://www.sreality.cz/api/v1/estates/search"
+    params = {
+        "category_main_cb": 1,
+        "category_type_cb": 1,
+        "locality_district_id": locality_district_id,
+        "locality_country_id": 112,
+        "locality_region_id": 4,
+        "limit": 60,
+        "offset": 0,
+        "lang": "cs",
+        "sort": "-date",
+        "ownership": 1,
+        "price_to": 2600000,
+        "watchdog_last_changed_from": (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, params=params, headers=headers)
+    data = response.json()
+    return data.get("results", [])
 
 
 def navratnost_barva(n):
@@ -107,45 +74,23 @@ def fmt(cena):
 # --- Stahni najmy ---
 print("Stahuji najmy ze Sreality...")
 najmy = get_najmy(25)
-print("Hotovo!\n")
+print("Najmy: " + str(najmy))
 
-# --- Prectи emaily ---
-mail = imaplib.IMAP4_SSL("imap.seznam.cz")
-mail.login("realitybot@seznam.cz", "Necum123")
-mail.select("inbox")
-
-vcera = (datetime.now() - timedelta(hours=24)).strftime("%d-%b-%Y")
-_, messages = mail.search(None, "SINCE", vcera)
-
-if not messages[0]:
-    print("Zadne nove emaily za poslednich 24 hodin.")
-    mail.logout()
-    exit()
-
-print("=" * 50)
-print("BYTY Z POSLEDNICH 24 HODIN")
-print("=" * 50)
+# --- Stahni nove byty ---
+print("Stahuji nove byty...")
+vysledky = get_nove_byty(25)
+print("Nalezeno: " + str(len(vysledky)) + " bytu za poslednich 24 hodin")
 
 byty = []
 
-for msg_id in messages[0].split():
-    _, msg_data = mail.fetch(msg_id, "(RFC822)")
-    msg = email.message_from_bytes(msg_data[0][1])
+for inzerat in vysledky:
+    nazev = inzerat.get("advert_name", "")
+    cena = inzerat.get("price", 0)
+    disp = inzerat.get("category_sub_cb", {}).get("name", "")
+    hash_id = inzerat.get("hash_id")
+    mesto = inzerat.get("locality", {}).get("city", "")
 
-    predmet = dekoduj(msg["subject"])
-    if "Fwd:" not in predmet and "Prodej" not in predmet:
-        continue
-
-    html = get_body(msg)
-    if not html:
-        continue
-
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator=" ", strip=True)
-
-    cena = vytahni_cenu(text)
-    disp = vytahni_dispozici(predmet)
-    url = vytahni_url(soup)
+    url_inzeratu = "https://www.sreality.cz/detail/prodej/byt/" + str(hash_id) if hash_id else None
 
     if cena and disp and disp in najmy:
         najem = najmy[disp]
@@ -153,26 +98,20 @@ for msg_id in messages[0].split():
         navratnost = (rocni_najem / cena) * 100
         barva = navratnost_barva(navratnost)
 
-        print(predmet.replace("Fwd: ", ""))
-        print("  Cena:       " + fmt(cena) + " Kc")
-        print("  Navratnost: " + str(round(navratnost, 1)) + "%")
-        if url:
-            print("  URL:        " + url)
+        print(nazev + " " + mesto + " - " + fmt(cena) + " Kc - " + str(round(navratnost, 1)) + "%")
 
         byty.append({
-            "nazev": predmet.replace("Fwd: ", ""),
+            "nazev": nazev + " " + mesto,
             "cena": cena,
             "najem": najem,
             "navratnost": navratnost,
             "barva": barva,
-            "url": url
+            "url": url_inzeratu
         })
-
-mail.logout()
 
 # --- Posli email ---
 if not byty:
-    print("Zadne nove byty - email se neposila.")
+    print("Zadne nove byty za poslednich 24 hodin - email se neposila.")
 else:
     byty_sorted = sorted(byty, key=lambda x: x["navratnost"], reverse=True)
 
