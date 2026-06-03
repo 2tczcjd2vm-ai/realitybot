@@ -90,7 +90,7 @@ for inzerat in vysledky:
     hash_id = inzerat.get("hash_id")
     mesto = inzerat.get("locality", {}).get("city", "")
 
-    url_inzeratu = "https://www.sreality.cz/detail/prodej/byt/" + str(hash_id) if hash_id else None
+    url_inzeratu = "https://www.sreality.cz/hledej?id=" + str(hash_id) if hash_id else None
 
     if cena and disp and disp in najmy:
         najem = najmy[disp]
