@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+
 def get_najmy(locality_district_id):
     url = "https://www.sreality.cz/api/v1/estates/search"
     params = {
@@ -89,8 +90,11 @@ for inzerat in vysledky:
     disp = inzerat.get("category_sub_cb", {}).get("name", "")
     hash_id = inzerat.get("hash_id")
     mesto = inzerat.get("locality", {}).get("city", "")
-
-    url_inzeratu = "https://www.sreality.cz/hledej?id=" + str(hash_id) if hash_id else None
+    mesto_seo = inzerat.get("locality", {}).get("city_seo_name", "")
+    okres_seo = inzerat.get("locality", {}).get("district_seo_name", "")
+    ulice = inzerat.get("locality", {}).get("street_seo_name", "")
+    disp_url = disp.replace("+", "%2B") if disp else ""
+    url_inzeratu = f"https://www.sreality.cz/detail/prodej/byt/{disp_url}/{mesto_seo}-{okres_seo}-{ulice}/{hash_id}" if hash_id else None
 
     if cena and disp and disp in najmy:
         najem = najmy[disp]
@@ -160,7 +164,7 @@ else:
 
     try:
         with smtplib.SMTP_SSL("smtp.email.cz", 465) as server:
-            server.login("realitybot@seznam.cz", "Necum123")
+            server.login("realitybot@seznam.cz", os.environ.get("SMTP_PASS", "Necum123"))
             server.sendmail("realitybot@seznam.cz", "tomas.tuzar@seznam.cz", zprava.as_string())
         print("Report odeslan - " + pocet + " bytu!")
     except Exception as e:
