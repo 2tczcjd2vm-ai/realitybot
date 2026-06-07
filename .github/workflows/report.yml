@@ -17,5 +17,6 @@ jobs:
       - run: python report.py
         env:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
-        
-          
+      - run: python byty_praha.py
+        env:
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
