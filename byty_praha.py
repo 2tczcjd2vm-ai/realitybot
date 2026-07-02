@@ -192,3 +192,17 @@ else:
         print(f"Report odeslán! {len(top20)} bytů.")
     except Exception as e:
         print("CHYBA: " + str(e))
+
+    broadcast_secret = os.environ.get("BROADCAST_SECRET")
+    if broadcast_secret:
+        try:
+            resp = requests.post(
+                "https://podhodnocenebyty.cz/api/broadcast",
+                json={"subject": f"🏠 Nové byty Praha · {datum}", "html": html_report},
+                headers={"Authorization": f"Bearer {broadcast_secret}"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            print("Broadcast odeslán odběratelům.")
+        except Exception as e:
+            print("CHYBA broadcast: " + str(e))
