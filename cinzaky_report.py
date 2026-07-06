@@ -91,8 +91,8 @@ for inzerat in data.get("results", []):
     odkaz = f"https://www.sreality.cz/detail/prodej/komercni/cinzovni-dum/{mesto_seo}-{okres_seo}-{ulice}/{hash_id}"
 
     cast_prahy = None
-    ward = inzerat.get("locality", {}).get("ward", "")
-    district = inzerat.get("locality", {}).get("district", "")
+    ward = inzerat.get("locality", {}).get("ward") or ""
+    district = inzerat.get("locality", {}).get("district") or ""
     for p in prahy.keys():
         cislo = p.replace("Praha ", "")
         if f"Praha {cislo}" in district or f"Praha {cislo}" in ward:
