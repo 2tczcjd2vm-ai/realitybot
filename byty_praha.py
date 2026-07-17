@@ -116,6 +116,7 @@ for nazev_prahy, district_id in prahy.items():
             "nazev": nazev,
             "lokalita": lokalita,
             "cast_prahy": nazev_prahy,
+            "dispozice": disp,
             "cena": cena,
             "plocha": plocha,
             "cena_za_m2": cena_za_m2,
@@ -206,3 +207,15 @@ else:
             print("Broadcast odeslán odběratelům.")
         except Exception as e:
             print("CHYBA broadcast: " + str(e))
+
+        try:
+            resp = requests.post(
+                "https://podhodnocenebyty.cz/api/ingest-byty",
+                json={"date": datetime.now().strftime("%Y-%m-%d"), "byty": byty},
+                headers={"Authorization": f"Bearer {broadcast_secret}"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            print(f"Surová data ({len(byty)} bytů) uložena pro personalizaci.")
+        except Exception as e:
+            print("CHYBA ingest: " + str(e))
