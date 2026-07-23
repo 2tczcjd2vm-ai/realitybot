@@ -131,12 +131,12 @@ if not byty:
     print("Žádné nové byty – email se neposílá.")
 else:
     byty.sort(key=lambda x: x["odchylka"])
-    top20 = byty[:20]
+    top5 = byty[:5]
 
     datum = datetime.now().strftime("%d. %m. %Y")
     karty = ""
 
-    for b in top20:
+    for b in top5:
         odchylka = b["odchylka"]
         if odchylka < -10:
             barva = "#22c55e"
@@ -172,7 +172,7 @@ else:
         '<div style="max-width:600px;margin:0 auto;padding:16px">'
         '<div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
         f'<h1 style="margin:0;color:white;font-size:22px">🏠 Nové podhodnocené byty Praha</h1>'
-        f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(top20)} bytů · seřazeno podle odchylky od průměru</p>'
+        f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(top5)} bytů · seřazeno podle odchylky od průměru</p>'
         "</div>"
         f"{karty}"
         '<div style="text-align:center;padding:16px">'
@@ -190,7 +190,7 @@ else:
         with smtplib.SMTP_SSL("smtp.email.cz", 465) as server:
             server.login("realitybot@seznam.cz", os.environ.get("SMTP_PASS", "Necum123"))
             server.sendmail("realitybot@seznam.cz", "tomas.tuzar@seznam.cz", zprava.as_string())
-        print(f"Report odeslán! {len(top20)} bytů.")
+        print(f"Report odeslán! {len(top5)} bytů.")
     except Exception as e:
         print("CHYBA: " + str(e))
 
@@ -211,11 +211,11 @@ else:
         try:
             resp = requests.post(
                 "https://podhodnocenebyty.cz/api/ingest-byty",
-                json={"date": datetime.now().strftime("%Y-%m-%d"), "byty": byty},
+                json={"date": datetime.now().strftime("%Y-%m-%d"), "byty": top5},
                 headers={"Authorization": f"Bearer {broadcast_secret}"},
                 timeout=30,
             )
             resp.raise_for_status()
-            print(f"Surová data ({len(byty)} bytů) uložena pro personalizaci.")
+            print(f"Surová data ({len(top5)} bytů) uložena pro personalizaci.")
         except Exception as e:
             print("CHYBA ingest: " + str(e))
