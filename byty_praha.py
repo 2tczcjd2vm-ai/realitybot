@@ -148,11 +148,11 @@ print(f"Nalezeno {len(byty)} nových bytů.\n")
 
 byty.sort(key=lambda x: x["odchylka"])
 
-# Do reportu patri VSECHNY byty pod cenou lokality, ne pevny pocet. Drive se
-# posilalo top5 bez ohledu na odchylku, takze ve slabsi dny report obsahoval
-# i byty NAD prumerem (napr. +12 %) jen aby se seznam zaplnil. Pocet se tedy
-# nove lisi den ode dne podle toho, co trh skutecne nabidl.
-pod_cenou = [b for b in byty if b["odchylka"] < 0]
+# Do reportu patri VSECHNY zelene byty, tj. aspon 10 % pod prumerem sve casti
+# Prahy — stejna hranice, jakou pouziva barva karty nize. Pocet se tedy lisi
+# den ode dne podle nabidky trhu, zadny pevny limit.
+ZELENA_HRANICE = -10
+pod_cenou = [b for b in byty if b["odchylka"] < ZELENA_HRANICE]
 
 if not pod_cenou:
     print(f"Z {len(byty)} novych bytu neni zadny pod cenou – email se neposílá.")
