@@ -8,6 +8,20 @@ from datetime import datetime, timedelta
 
 headers = {"User-Agent": "Mozilla/5.0"}
 
+
+def je_druzstevni(inzerat, nazev=""):
+    """Vrátí True, pokud je inzerát družstevní vlastnictví (nespoléhá jen na API filtr)."""
+    texty = [nazev]
+    for klic in ("labelsAll", "labels"):
+        hodnota = inzerat.get(klic)
+        if isinstance(hodnota, list):
+            texty.extend(str(x) for x in hodnota)
+    for text in texty:
+        if text and ("družstev" in text.lower() or "druzstev" in text.lower()):
+            return True
+    return False
+
+
 dispozice_map = {
     2: "1+kk", 3: "1+1", 4: "2+kk", 5: "2+1",
     6: "3+kk", 7: "3+1", 8: "4+kk", 9: "4+1",
@@ -51,6 +65,8 @@ for nazev_prahy, district_id in prahy.items():
     for inzerat in data.get("results", []):
         cena = inzerat.get("price", 0)
         nazev = inzerat.get("advert_name", "")
+        if je_druzstevni(inzerat, nazev):
+            continue
         m = re.search(r"(\d+)\s*m²", nazev)
         if m and cena and cena > 100000:
             plocha = int(m.group(1))
@@ -96,6 +112,9 @@ for nazev_prahy, district_id in prahy.items():
         disp_url = disp.replace("+", "%2B") if disp else ""
         odkaz = f"https://www.sreality.cz/detail/prodej/byt/{disp_url}/{mesto_seo}-{okres_seo}-{ulice}/{hash_id}" if hash_id else "#"
 
+        if je_druzstevni(inzerat, nazev):
+            continue
+
         m = re.search(r"(\d+)\s*m²", nazev)
         if not m or not cena or cena < 100000:
             continue
@@ -127,16 +146,23 @@ for nazev_prahy, district_id in prahy.items():
 
 print(f"Nalezeno {len(byty)} nových bytů.\n")
 
-if not byty:
-    print("Žádné nové byty – email se neposílá.")
+byty.sort(key=lambda x: x["odchylka"])
+
+# Do reportu patri VSECHNY byty pod cenou lokality, ne pevny pocet. Drive se
+# posilalo top5 bez ohledu na odchylku, takze ve slabsi dny report obsahoval
+# i byty NAD prumerem (napr. +12 %) jen aby se seznam zaplnil. Pocet se tedy
+# nove lisi den ode dne podle toho, co trh skutecne nabidl.
+pod_cenou = [b for b in byty if b["odchylka"] < 0]
+
+if not pod_cenou:
+    print(f"Z {len(byty)} novych bytu neni zadny pod cenou – email se neposílá.")
 else:
-    byty.sort(key=lambda x: x["odchylka"])
-    top5 = byty[:5]
+    print(f"Pod cenou: {len(pod_cenou)} z {len(byty)} novych bytu.")
 
     datum = datetime.now().strftime("%d. %m. %Y")
     karty = ""
 
-    for b in top5:
+    for b in pod_cenou:
         odchylka = b["odchylka"]
         if odchylka < -10:
             barva = "#22c55e"
@@ -172,7 +198,7 @@ else:
         '<div style="max-width:600px;margin:0 auto;padding:16px">'
         '<div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
         f'<h1 style="margin:0;color:white;font-size:22px">🏠 Nové podhodnocené byty Praha</h1>'
-        f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(top5)} bytů · seřazeno podle odchylky od průměru</p>'
+        f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou · seřazeno podle odchylky od průměru</p>'
         "</div>"
         f"{karty}"
         '<div style="text-align:center;padding:16px">'
@@ -190,7 +216,7 @@ else:
         with smtplib.SMTP_SSL("smtp.email.cz", 465) as server:
             server.login("realitybot@seznam.cz", os.environ.get("SMTP_PASS", "Necum123"))
             server.sendmail("realitybot@seznam.cz", "tomas.tuzar@seznam.cz", zprava.as_string())
-        print(f"Report odeslán! {len(top5)} bytů.")
+        print(f"Report odeslán! {len(pod_cenou)} bytů pod cenou.")
     except Exception as e:
         print("CHYBA: " + str(e))
 
@@ -211,11 +237,11 @@ else:
         try:
             resp = requests.post(
                 "https://podhodnocenebyty.cz/api/ingest-byty",
-                json={"date": datetime.now().strftime("%Y-%m-%d"), "byty": top5},
+                json={"date": datetime.now().strftime("%Y-%m-%d"), "byty": pod_cenou},
                 headers={"Authorization": f"Bearer {broadcast_secret}"},
                 timeout=30,
             )
             resp.raise_for_status()
-            print(f"Surová data ({len(top5)} bytů) uložena pro personalizaci.")
+            print(f"Surová data ({len(pod_cenou)} bytů) uložena pro personalizaci.")
         except Exception as e:
             print("CHYBA ingest: " + str(e))
