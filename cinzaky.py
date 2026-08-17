@@ -25,15 +25,18 @@ for nazev, district_id in prahy.items():
         "category_type_cb": 1,
         "locality_district_id": district_id,
         "per_page": 60,
+        "ownership": 1,  # jen osobní vlastnictví, vyřadí družstevní byty
     }
-    
+
     response = requests.get(url, params=params, headers=headers)
     data = response.json()
-    
+
     ceny_za_m2 = []
     for inzerat in data["_embedded"]["estates"]:
         cena = inzerat.get("price", 0)
         name = inzerat.get("name", "")
+        if "družstev" in name.lower() or "druzstev" in name.lower():
+            continue
         # Vytáhni m² z názvu
         import re
         m = re.search(r"(\d+)\s*m²", name)

@@ -44,6 +44,7 @@ for nazev_prahy, district_id in prahy.items():
         "limit": 60,
         "offset": 0,
         "lang": "cs",
+        "ownership": 1,  # jen osobní vlastnictví, vyřadí družstevní byty
     }
     response = requests.get(url, params=params, headers=headers)
     data = response.json()
@@ -51,6 +52,8 @@ for nazev_prahy, district_id in prahy.items():
     for inzerat in data.get("results", []):
         cena = inzerat.get("price", 0)
         nazev = inzerat.get("advert_name", "")
+        if "družstev" in nazev.lower() or "druzstev" in nazev.lower():
+            continue
         m = re.search(r"(\d+)\s*m²", nazev)
         if m and cena and cena > 100000:
             plocha = int(m.group(1))

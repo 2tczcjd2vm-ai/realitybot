@@ -6,6 +6,19 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
+def je_druzstevni(inzerat, nazev=""):
+    """Vrátí True, pokud je inzerát družstevní vlastnictví (nespoléhá jen na API filtr)."""
+    texty = [nazev]
+    for klic in ("labelsAll", "labels"):
+        hodnota = inzerat.get(klic)
+        if isinstance(hodnota, list):
+            texty.extend(str(x) for x in hodnota)
+    for text in texty:
+        if text and ("družstev" in text.lower() or "druzstev" in text.lower()):
+            return True
+    return False
+
+
 def get_najmy(locality_district_id):
     url = "https://www.sreality.cz/api/v1/estates/search"
     params = {
@@ -95,6 +108,9 @@ for inzerat in vysledky:
     ulice = inzerat.get("locality", {}).get("street_seo_name", "")
     disp_url = disp.replace("+", "%2B") if disp else ""
     url_inzeratu = f"https://www.sreality.cz/detail/prodej/byt/{disp_url}/{mesto_seo}-{okres_seo}-{ulice}/{hash_id}" if hash_id else None
+
+    if je_druzstevni(inzerat, nazev):
+        continue
 
     if cena and disp and disp in najmy:
         najem = najmy[disp]
