@@ -179,10 +179,16 @@ resp = requests.post(
 resp.raise_for_status()
 data = resp.json()
 
+# Klic je dvojice (mestska cast, ctvrt), ne jen nazev ctvrti. Katastralni
+# uzemi se v Praze casto deli mezi dve mestske casti -- Bubenec lezi v Praze 6
+# i v Praze 7, Liben dokonce ve trech. Pri klicovani jen podle nazvu jeden
+# radek prepsal druhy a byt z Bubence v Praze 6 se meril cislem za Prahu 7.
 prumery_ctvrti, prumery_casti = {}, {}
 for r in data.get("prumery", []):
-    cil = prumery_ctvrti if r["uroven"] == "ctvrt" else prumery_casti
-    cil[r["klic"]] = r
+    if r["uroven"] == "ctvrt":
+        prumery_ctvrti[(r["district"], r["klic"])] = r
+    else:
+        prumery_casti[r["klic"]] = r
 
 podlozene = [k for k, v in prumery_ctvrti.items() if v["zdroj"] == "ctvrt"]
 print(f"Uloženo {data.get('ulozeno')} vzorků, okno {data.get('okno_dni')} dní.")
@@ -192,7 +198,7 @@ print(f"Čtvrtí s vlastním průměrem: {len(podlozene)} z {len(prumery_ctvrti)
 
 def reference(nazev_ctvrti, nazev_prahy):
     """Referenční cena za m² pro danou čtvrť. Vrací (cena, zdroj, počet vzorků)."""
-    zaznam = prumery_ctvrti.get(nazev_ctvrti) or prumery_casti.get(nazev_prahy)
+    zaznam = prumery_ctvrti.get((nazev_prahy, nazev_ctvrti)) or prumery_casti.get(nazev_prahy)
     if not zaznam or not zaznam.get("median"):
         return None, None, None
     # Medián, ne průměr: na malém vzorku jeden penthouse posune průměr
