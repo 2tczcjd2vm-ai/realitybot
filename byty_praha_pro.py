@@ -40,6 +40,16 @@ MAX_STRAN = 5
 
 ZELENA_HRANICE = -10
 
+# Spodni mez duveryhodnosti. Byt vyrazne pod cenou ctvrti neni nalez, ale
+# varovny signal — 19. 8. 2026 se objevil inzerat za 58 tis./m2 v Libni, kde
+# je obvykla cena 166 tis. Mel strojove generovany popis ("Zrna vytahu"),
+# rozporne udaje (v datech 3+1, v textu 4+1) a byt v suterenu.
+#
+# Skutecne vyhodne koupe se drzi zhruba do -35 %. Co je pod timhle prahem,
+# byva podvod, prodej podilu, nebo chyba v inzeratu. Vypisuje se do logu,
+# aby se nic neztracelo potichu.
+PODEZRELE_LEVNE = -45
+
 prahy = {
     "Praha 1": 5001,
     "Praha 2": 5002,
@@ -384,6 +394,15 @@ print(f"Nalezeno {len(byty)} nových bytů.\n")
 
 byty.sort(key=lambda x: x["odchylka"])
 pod_cenou = [b for b in byty if b["odchylka"] < ZELENA_HRANICE]
+
+# Podezřele levné ven. Radši přijít o jeden skutečný trhák než poslat podvod.
+podezrele = [b for b in pod_cenou if b["odchylka"] < PODEZRELE_LEVNE]
+if podezrele:
+    print()
+    print(f"Vyřazeno jako podezřele levné (pod {PODEZRELE_LEVNE} %):")
+    for b in podezrele:
+        print(f"  {b['odchylka']:+6.1f}%  {b['ctvrt']} · {b['cena']/1e6:.2f} mil · {b['odkaz']}")
+    pod_cenou = [b for b in pod_cenou if b["odchylka"] >= PODEZRELE_LEVNE]
 
 # Poslední síto: u bytů, které se chystáme poslat, ověřit vlastnictví přímo
 # v detailu inzerátu. Až sem se dostane hrstka bytů, takže je to pár requestů.
