@@ -1,0 +1,32 @@
+# Bot placene verze — schvalne ve vlastnim workflow, ne v report.yml.
+#
+# Duvod: report.yml rozesila denni report VSEM odberatelum. Kdyby byl placeny
+# bot jeho soucasti, neslo by ho rucne spustit na zkousku, aniz by lidem
+# odesla druha kopie denniho mailu.
+#
+# Bezi kazdy den. Bezrealitky neumi "co pribylo za 24 hodin", takze se novinky
+# poznavaji podle vlastni evidence videnych inzeratu — cim delsi pauza, tim
+# vetsi davka pak spadne najednou.
+
+name: Podhodnocene byty — placena verze
+
+on:
+  schedule:
+    # 11:40 UTC, tedy po hlavnim reportu, at oba boti netahaji sreality naraz
+    - cron: '40 11 * * *'
+  workflow_dispatch:
+
+jobs:
+  analyza:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install requests
+      - run: python byty_praha_pro.py
+        env:
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          BROADCAST_SECRET: ${{ secrets.BROADCAST_SECRET }}
