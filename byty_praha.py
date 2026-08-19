@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import re
 import smtplib
@@ -7,6 +8,37 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 
 headers = {"User-Agent": "Mozilla/5.0"}
+
+
+def osobni_vlastnictvi(hash_id):
+    """Ověří v detailu inzerátu, že jde o osobní vlastnictví.
+
+    Filtr `ownership=1` v hledání ani slovo "družstevní" v názvu nestačí:
+    19. 8. 2026 se do placeného výběru dostal družstevní byt v Čimicích,
+    který měl v názvu jen "Prodej bytu 3+1 72 m2", prázdné štítky a v seznamu
+    byl vedený jako osobní vlastnictví — na družstvo se přišlo až z popisu.
+
+    Detail inzerátu drží pole ownership (1 = osobní, 2 = družstevní) a to je
+    jediný spolehlivý zdroj. Kontroluje se jen hrstka bytů, které se chystáme
+    poslat. Při pochybnostech vrací False — radši byt vynechat.
+    """
+    try:
+        d = requests.get(
+            "https://www.sreality.cz/api/v1/estates/%s" % hash_id,
+            headers=headers, timeout=30,
+        ).json().get("result", {})
+    except Exception as e:
+        print("  VAROVANI: detail %s se nepodarilo nacist (%s), byt vynechan" % (hash_id, e))
+        return False
+
+    if (d.get("ownership") or {}).get("value") != 1:
+        return False
+
+    popis = (d.get("advert_description") or "").lower()
+    if "družstev" in popis or "druzstev" in popis:
+        return False
+
+    return True
 
 
 def je_druzstevni(inzerat, nazev=""):
@@ -132,6 +164,7 @@ for nazev_prahy, district_id in prahy.items():
         odchylka = ((cena_za_m2 - prumer) / prumer) * 100
 
         byty.append({
+            "hash_id": str(hash_id),
             "nazev": nazev,
             "lokalita": lokalita,
             "cast_prahy": nazev_prahy,
@@ -153,6 +186,22 @@ byty.sort(key=lambda x: x["odchylka"])
 # den ode dne podle nabidky trhu, zadny pevny limit.
 ZELENA_HRANICE = -10
 pod_cenou = [b for b in byty if b["odchylka"] < ZELENA_HRANICE]
+
+# Posledni sito: u bytu, ktere se chystame poslat, overit vlastnictvi primo
+# v detailu inzeratu. Az sem se dostane hrstka bytu, takze je to par requestu.
+if pod_cenou:
+    print()
+    print("Overuji vlastnictvi u %d bytu pred odeslanim..." % len(pod_cenou))
+    proverene = []
+    for b in pod_cenou:
+        if osobni_vlastnictvi(b["hash_id"]):
+            proverene.append(b)
+        else:
+            print("  VYRAZEN (neni osobni vlastnictvi): %s" % b["nazev"])
+        time.sleep(0.3)
+    if len(proverene) != len(pod_cenou):
+        print("  Proslo %d z %d." % (len(proverene), len(pod_cenou)))
+    pod_cenou = proverene
 
 if not pod_cenou:
     print(f"Z {len(byty)} novych bytu neni zadny pod cenou – email se neposílá.")
