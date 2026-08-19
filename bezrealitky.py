@@ -82,7 +82,7 @@ def nacti_prazske_byty(urci_mestskou_cast, log=print):
     log(f"  ze sitemapy: {len(odkazy)} pražských bytů na prodej")
 
     byty = []
-    preskoceno = {"neaktivní": 0, "není osobní vlastnictví": 0,
+    preskoceno = {"neaktivní": 0, "není osobní vlastnictví": 0, "podzemní podlaží": 0,
                   "chybí cena/plocha": 0, "neurčená část": 0, "nečitelné": 0}
 
     for url in odkazy:
@@ -98,6 +98,16 @@ def nacti_prazske_byty(urci_mestskou_cast, log=print):
         # sreality se kvůli němu nemusí stahovat nic navíc.
         if adv.get("ownership") != "OSOBNI":
             preskoceno["není osobní vlastnictví"] += 1
+            continue
+
+        # Nic pod přízemím. Bezrealitky číslují od 1, kde 1 je nejnižší
+        # obytné podlaží — v žádném ze zkoumaných inzerátů se nižší hodnota
+        # neobjevila. Filtr je tu jako pojistka pro případ, že se objeví;
+        # neznámé patro se nezahazuje, aby se kvůli nevyplněnému údaji
+        # neztrácely inzeráty.
+        patro = adv.get("etage")
+        if patro is not None and patro < 1:
+            preskoceno["podzemní podlaží"] += 1
             continue
 
         cena, plocha = adv.get("price"), adv.get("surface")
@@ -124,6 +134,7 @@ def nacti_prazske_byty(urci_mestskou_cast, log=print):
             "cena": cena,
             "plocha": plocha,
             "cena_za_m2": cena / plocha,
+            "patro": patro,
             "gps_lat": gps.get("lat"),
             "gps_lon": gps.get("lng"),
             "odkaz": url,

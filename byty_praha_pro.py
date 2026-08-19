@@ -343,7 +343,30 @@ def urci_mestskou_cast(nazev_ctvrti, lat, lon):
 print()
 print("Stahuji Bezrealitky...")
 try:
-    for b in bezrealitky.nacti_prazske_byty(urci_mestskou_cast):
+    z_bezrealitek = bezrealitky.nacti_prazske_byty(urci_mestskou_cast)
+
+    # Bezrealitky neumi "co pribylo za 24 hodin" — ze sitemapy pada vzdycky
+    # cela nabidka. Bez tehle evidence by se tytez byty hlasily kazdy den
+    # znovu; pri prvnim behu jich napadalo 91.
+    #
+    # PB_SEED_BEZREALITKY=1 pri uplne prvnim behu: stavajici nabidka se jen
+    # zaeviduje a nic se neohlasi.
+    seed = os.environ.get("PB_SEED_BEZREALITKY") == "1"
+    r = requests.post(
+        f"{WEB}/api/nove-inzeraty",
+        json={"zdroj": "bezrealitky",
+              "hash_ids": [b["hash_id"] for b in z_bezrealitek],
+              "seed": seed},
+        headers={"Authorization": f"Bearer {broadcast_secret}"},
+        timeout=60,
+    )
+    r.raise_for_status()
+    nove = set(r.json().get("nove", []))
+    print(f"  nových od minule: {len(nove)} z {len(z_bezrealitek)}"
+          + (" (zakládací běh, nic se nehlásí)" if seed else ""))
+    z_bezrealitek = [b for b in z_bezrealitek if b["hash_id"] in nove]
+
+    for b in z_bezrealitek:
         prumer, zdroj, pocet_vzorku = reference(b["ctvrt"], b["cast_prahy"])
         if not prumer:
             continue
