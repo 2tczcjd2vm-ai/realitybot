@@ -312,7 +312,7 @@ html_report = (
     '<div style="max-width:600px;margin:0 auto;padding:16px">'
     '<div style="background:linear-gradient(135deg,#0d9488,#2dd4bf);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
     '<h1 style="margin:0;color:white;font-size:22px">🏠 Podhodnocené byty · přesná analýza</h1>'
-    f'<p style="margin:8px 0 0;color:#ccfbf1;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou své čtvrti</p>'
+    f'<p style="margin:8px 0 0;color:#ccfbf1;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou v dané čtvrti</p>'
     "</div>"
     f"{karty}"
     '<div style="text-align:center;padding:16px">'
