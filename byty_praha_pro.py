@@ -22,6 +22,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 
+import bezrealitky
+
 headers = {"User-Agent": "Mozilla/5.0"}
 
 API = "https://www.sreality.cz/api/v1/estates/search"
@@ -194,6 +196,10 @@ for nazev_prahy, district_id in prahy.items():
             "district": nazev_prahy,
             "cena_m2": round(m2),
             "cena": cena,
+            # Souradnice slouzi k urceni mestske casti u inzeratu z jinych
+            # portalu, ktere znaji jen nazev ctvrti. Viz pb_district_podle_gps.
+            "gps_lat": lok.get("gps_lat"),
+            "gps_lon": lok.get("gps_lon"),
         })
         pocet += 1
 
@@ -301,6 +307,56 @@ for nazev_prahy, district_id in prahy.items():
             "odkaz": odkaz,
         })
 
+# ---------------------------------------------------------------------------
+# 3b. Druhý zdroj: Bezrealitky
+#
+# Soukromí prodávající, kteří na sreality většinou nejsou. Měří se proti
+# stejným mediánům za čtvrť, jen inzeráty přitékají odjinud. Do cenové báze
+# se zatím nezapočítávají — báze zůstává postavená na sreality, aby se
+# nemíchaly dvě různé populace prodávajících.
+#
+# Když Bezrealitky z jakéhokoliv důvodu selžou, bot pokračuje jen se sreality.
+# ---------------------------------------------------------------------------
+def urci_mestskou_cast(nazev_ctvrti, lat, lon):
+    """Městská část pro čtvrť z cizího portálu."""
+    if not nazev_ctvrti:
+        return None
+    moznosti = {d for (d, c) in prumery_ctvrti if c == nazev_ctvrti}
+    if len(moznosti) == 1:
+        return moznosti.pop()
+    # Název čtvrti nestačí (Vinohrady leží ve třech částech) — rozhodnou souřadnice.
+    if lat is None or lon is None:
+        return None
+    try:
+        r = requests.post(
+            f"{WEB}/api/mestska-cast",
+            json={"lat": lat, "lon": lon},
+            headers={"Authorization": f"Bearer {broadcast_secret}"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json().get("district")
+    except Exception:
+        return None
+
+
+print()
+print("Stahuji Bezrealitky...")
+try:
+    for b in bezrealitky.nacti_prazske_byty(urci_mestskou_cast):
+        prumer, zdroj, pocet_vzorku = reference(b["ctvrt"], b["cast_prahy"])
+        if not prumer:
+            continue
+        b.update({
+            "prumer_ctvrti": prumer,
+            "odchylka": ((b["cena_za_m2"] - prumer) / prumer) * 100,
+            "zdroj_prumeru": zdroj,
+            "pocet_vzorku": pocet_vzorku,
+        })
+        byty.append(b)
+except Exception as e:
+    print("CHYBA Bezrealitky: " + str(e) + " — pokračuji jen se sreality")
+
 print(f"Nalezeno {len(byty)} nových bytů.\n")
 
 byty.sort(key=lambda x: x["odchylka"])
@@ -313,7 +369,7 @@ if pod_cenou:
     print(f"Ověřuji vlastnictví u {len(pod_cenou)} bytů před odesláním...")
     proverene = []
     for b in pod_cenou:
-        if osobni_vlastnictvi(b["hash_id"]):
+        if b.get("zdroj") == "bezrealitky" or osobni_vlastnictvi(b["hash_id"]):
             proverene.append(b)
         else:
             print(f"  VYŘAZEN (není osobní vlastnictví): {b['nazev']} · {b['ctvrt']}")
