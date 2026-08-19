@@ -133,6 +133,8 @@ def stahni(district_id, **navic):
 print("Stahuji nabídku bytů v Praze...")
 
 vzorky = []
+# Aktuální ceny celé nabídky — proti nim se porovnávají dřív poslané byty.
+nabidka_cen = []
 for nazev_prahy, district_id in prahy.items():
     inzeraty = stahni(district_id)
     pocet = 0
@@ -149,6 +151,7 @@ for nazev_prahy, district_id in prahy.items():
             continue
 
         lok = inzerat.get("locality", {})
+        nabidka_cen.append({"hash_id": str(hash_id), "cena": cena})
         vzorky.append({
             "hash_id": str(hash_id),
             "citypart": ctvrt(inzerat),
@@ -246,6 +249,7 @@ for nazev_prahy, district_id in prahy.items():
         ) if hash_id else "#"
 
         byty.append({
+            "hash_id": str(hash_id),
             "nazev": nazev,
             "lokalita": lok.get("city", ""),
             "cast_prahy": nazev_prahy,
@@ -267,8 +271,34 @@ print(f"Nalezeno {len(byty)} nových bytů.\n")
 byty.sort(key=lambda x: x["odchylka"])
 pod_cenou = [b for b in byty if b["odchylka"] < ZELENA_HRANICE]
 
-if not pod_cenou:
-    raise SystemExit(f"Z {len(byty)} nových bytů není žádný pod cenou své čtvrti – e-mail se neposílá.")
+# ---------------------------------------------------------------------------
+# 4. Změny ceny u bytů, které jsme už někdy poslali
+#
+# Aktuální ceny máme z kroku 1, takže se kvůli tomu nestahuje nic navíc.
+# Endpoint zároveň zařadí dnešní výběr mezi sledované, a to v tomhle pořadí:
+# obráceně by se dnešním bytům rovnou zapsala aktuální cena a změna by zanikla.
+# ---------------------------------------------------------------------------
+zmeny_cen = []
+try:
+    resp = requests.post(
+        f"{WEB}/api/zmeny-cen",
+        json={"aktualni": nabidka_cen, "pridat": pod_cenou},
+        headers={"Authorization": f"Bearer {broadcast_secret}"},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    data_zmen = resp.json()
+    zmeny_cen = data_zmen.get("zmeny", [])
+    print(f"Sledovaných bytů zařazeno/aktualizováno: {data_zmen.get('sledovano')}")
+    print(f"Změn ceny dnes: {len(zmeny_cen)}")
+except Exception as e:
+    print("CHYBA zmeny-cen: " + str(e))
+
+if not pod_cenou and not zmeny_cen:
+    raise SystemExit(
+        f"Z {len(byty)} nových bytů není žádný pod cenou v dané čtvrti "
+        f"a nikomu se nezměnila cena – e-mail se neposílá."
+    )
 
 print(f"Pod cenou své čtvrti: {len(pod_cenou)} z {len(byty)} nových bytů.")
 
@@ -305,6 +335,50 @@ for b in pod_cenou:
         f'{odchylka:+.1f}%</div></div></div></a>'
     )
 
+# --- sekce Změny ceny ------------------------------------------------------
+karty_zmen = ""
+for z in zmeny_cen:
+    stara = float(z["cena_stara"])
+    nova = float(z["cena_nova"])
+    rozdil = nova - stara
+    procent = rozdil / stara * 100
+    zlevnil = rozdil < 0
+
+    barva = "#22c55e" if zlevnil else "#ef4444"
+    sipka = "▼" if zlevnil else "▲"
+    stara_fmt = f"{stara:,.0f} Kč".replace(",", " ")
+    nova_fmt = f"{nova:,.0f} Kč".replace(",", " ")
+    rozdil_fmt = f"{abs(rozdil):,.0f} Kč".replace(",", " ")
+    misto = " · ".join(x for x in (z.get("ctvrt"), z.get("cast_prahy")) if x)
+
+    karty_zmen += (
+        f'<a href="{z["odkaz"]}" style="text-decoration:none;color:inherit;" target="_blank">'
+        f'<div style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {barva}">'
+        f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        f'<div style="flex:1;padding-right:12px">'
+        f'<div style="font-weight:700;font-size:15px;color:#1d4ed8;margin-bottom:6px">{z["nazev"]}</div>'
+        f'<div style="color:#6b7280;font-size:12px;margin-bottom:4px">📍 {misto}</div>'
+        f'<div style="color:#6b7280;font-size:13px">'
+        f'<span style="text-decoration:line-through">{stara_fmt}</span> → '
+        f'<span style="color:{barva};font-weight:700">{nova_fmt}</span></div>'
+        f'<div style="color:#6b7280;font-size:12px">{"Zlevnil" if zlevnil else "Zdražil"} o {rozdil_fmt}</div>'
+        f'</div>'
+        f'<div style="background:{barva};color:white;padding:8px 12px;border-radius:8px;font-weight:800;font-size:16px;white-space:nowrap;min-width:70px;text-align:center">'
+        f'{sipka} {abs(procent):.1f}%</div></div></div></a>'
+    )
+
+sekce_zmen = (
+    (
+        '<div style="margin-top:28px">'
+        '<h2 style="color:#334155;font-size:17px;margin:0 0 4px">💸 Změny ceny</h2>'
+        f'<p style="color:#94a3b8;font-size:12px;margin:0 0 14px">'
+        f'{len(zmeny_cen)} {"byt změnil" if len(zmeny_cen) == 1 else "bytů změnilo"} cenu od doby, '
+        f'co jsme vám je poslali</p>'
+        f'{karty_zmen}</div>'
+    )
+    if zmeny_cen else ""
+)
+
 html_report = (
     "<!DOCTYPE html><html>"
     '<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
@@ -312,9 +386,11 @@ html_report = (
     '<div style="max-width:600px;margin:0 auto;padding:16px">'
     '<div style="background:linear-gradient(135deg,#0d9488,#2dd4bf);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
     '<h1 style="margin:0;color:white;font-size:22px">🏠 Podhodnocené byty · přesná analýza</h1>'
-    f'<p style="margin:8px 0 0;color:#ccfbf1;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou v dané čtvrti</p>'
+    f'<p style="margin:8px 0 0;color:#ccfbf1;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou v dané čtvrti'
+    f'{f" · {len(zmeny_cen)} změn ceny" if zmeny_cen else ""}</p>'
     "</div>"
     f"{karty}"
+    f"{sekce_zmen}"
     '<div style="text-align:center;padding:16px">'
     '<p style="margin:0;color:#9ca3af;font-size:11px">Odchylka = (cena/m² − obvyklá cena ve čtvrti) / obvyklá cena · '
     'Obvyklá cena je medián z nabídky za posledních 90 dní · Data ze Sreality</p>'
