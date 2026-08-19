@@ -65,6 +65,41 @@ def je_druzstevni(inzerat, nazev=""):
     return False
 
 
+def osobni_vlastnictvi(hash_id):
+    """Ověří v detailu inzerátu, že jde o osobní vlastnictví.
+
+    Filtr `ownership=1` v hledání ani slovo „družstevní“ v názvu nestačí:
+    19. 8. 2026 se do výběru dostal družstevní byt v Čimicích, který měl
+    v názvu jen „Prodej bytu 3+1 72 m²“, prázdné štítky a v seznamu byl
+    vedený jako osobní vlastnictví — na družstvo se přišlo až z popisu.
+    Detail inzerátu drží pole ownership (1 = osobní, 2 = družstevní), a to
+    je jediný spolehlivý zdroj.
+
+    Kontroluje se jen hrstka bytů, které se chystáme poslat, takže je to
+    pár requestů denně. Při pochybnostech vrací False — radši byt vynechat
+    než poslat družstevní.
+    """
+    try:
+        d = requests.get(
+            f"https://www.sreality.cz/api/v1/estates/{hash_id}",
+            headers=headers, timeout=30,
+        ).json().get("result", {})
+    except Exception as e:
+        print(f"  VAROVANI: detail {hash_id} se nepodařilo načíst ({e}), byt vynechán")
+        return False
+
+    vlastnictvi = (d.get("ownership") or {}).get("value")
+    if vlastnictvi != 1:
+        return False
+
+    # Druhá síť: makléři občas nechají štítek špatně, ale v popisu to přiznají.
+    popis = (d.get("advert_description") or "").lower()
+    if "družstev" in popis or "druzstev" in popis:
+        return False
+
+    return True
+
+
 def cena_inzeratu(inzerat):
     return inzerat.get("price_czk") or inzerat.get("price") or 0
 
@@ -270,6 +305,22 @@ print(f"Nalezeno {len(byty)} nových bytů.\n")
 
 byty.sort(key=lambda x: x["odchylka"])
 pod_cenou = [b for b in byty if b["odchylka"] < ZELENA_HRANICE]
+
+# Poslední síto: u bytů, které se chystáme poslat, ověřit vlastnictví přímo
+# v detailu inzerátu. Až sem se dostane hrstka bytů, takže je to pár requestů.
+if pod_cenou:
+    print()
+    print(f"Ověřuji vlastnictví u {len(pod_cenou)} bytů před odesláním...")
+    proverene = []
+    for b in pod_cenou:
+        if osobni_vlastnictvi(b["hash_id"]):
+            proverene.append(b)
+        else:
+            print(f"  VYŘAZEN (není osobní vlastnictví): {b['nazev']} · {b['ctvrt']}")
+        time.sleep(0.3)
+    if len(proverene) != len(pod_cenou):
+        print(f"  Prošlo {len(proverene)} z {len(pod_cenou)}.")
+    pod_cenou = proverene
 
 # ---------------------------------------------------------------------------
 # 4. Změny ceny u bytů, které jsme už někdy poslali
