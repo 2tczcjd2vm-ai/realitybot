@@ -27,3 +27,17 @@ jobs:
       - run: python chaty.py
         env:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+      # Bot placene verze. Zamerne az uplne posledni: bere nekolik minut
+      # (stahuje celou prazskou nabidku a k tomu inzeraty z Bezrealitek),
+      # takze pripadny vypadek uz neohrozi reporty nad nim.
+      #
+      # Musi bezet kazdy den. Bezrealitky neumi "co pribylo za 24 hodin",
+      # takze se novinky poznavaji podle vlastni evidence videnych inzeratu —
+      # cim delsi pauza, tim vetsi davka pak spadne najednou.
+      - name: Podhodnocene byty — placena verze
+        run: python byty_praha_pro.py
+        timeout-minutes: 25
+        env:
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          BROADCAST_SECRET: ${{ secrets.BROADCAST_SECRET }}
