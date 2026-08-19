@@ -10,8 +10,8 @@ Rozdíly oproti bezplatné verzi:
   3. ceny ukládá do Supabase a průměr počítá z klouzavého okna 90 dní
   4. porovnává byt s jeho čtvrtí (Bubeneč), ne s celou Prahou 6
 
-Zatím jen posílá analýzu na vlastní e-mail. Rozesílka platícím zákazníkům
-přijde, až budou tarify (balík 2).
+Nálezy ukládá na /api/ingest-pro, odkud je aplikace ukazuje platícím členům.
+Rozesílka e-mailem platícím zákazníkům přijde později.
 """
 import os
 import re
@@ -326,6 +326,21 @@ zprava["Subject"] = f"🏠 Byty podle čtvrtí · {datum}"
 zprava["From"] = "realitybot@seznam.cz"
 zprava["To"] = KOMU
 zprava.attach(MIMEText(html_report, "html"))
+
+# Ulozeni pro aplikaci. Zamerne to NENI /api/ingest-byty, ktery patri
+# bezplatne verzi — kdyby do nej sypaly oba boti, jeden by druhemu prepsal
+# denni data.
+try:
+    resp = requests.post(
+        f"{WEB}/api/ingest-pro",
+        json={"date": datetime.now().strftime("%Y-%m-%d"), "byty": pod_cenou},
+        headers={"Authorization": f"Bearer {broadcast_secret}"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    print(f"Uloženo pro aplikaci: {resp.json().get('ulozeno')} bytů.")
+except Exception as e:
+    print("CHYBA ingest-pro: " + str(e))
 
 try:
     with smtplib.SMTP_SSL("smtp.email.cz", 465) as server:
