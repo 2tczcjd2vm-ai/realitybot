@@ -290,14 +290,14 @@ try:
     data_zmen = resp.json()
     zmeny_cen = data_zmen.get("zmeny", [])
     print(f"Sledovaných bytů zařazeno/aktualizováno: {data_zmen.get('sledovano')}")
-    print(f"Změn ceny dnes: {len(zmeny_cen)}")
+    print(f"Zlevněných bytů dnes: {len(zmeny_cen)}")
 except Exception as e:
     print("CHYBA zmeny-cen: " + str(e))
 
 if not pod_cenou and not zmeny_cen:
     raise SystemExit(
         f"Z {len(byty)} nových bytů není žádný pod cenou v dané čtvrti "
-        f"a nikomu se nezměnila cena – e-mail se neposílá."
+        f"a nikdo ze sledovaných nezlevnil – e-mail se neposílá."
     )
 
 print(f"Pod cenou své čtvrti: {len(pod_cenou)} z {len(byty)} nových bytů.")
@@ -337,18 +337,17 @@ for b in pod_cenou:
 
 # --- sekce Změny ceny ------------------------------------------------------
 karty_zmen = ""
+# Endpoint vraci vyhradne zlevnene byty; zdrazeni nikoho nezajima.
 for z in zmeny_cen:
     stara = float(z["cena_stara"])
     nova = float(z["cena_nova"])
-    rozdil = nova - stara
-    procent = rozdil / stara * 100
-    zlevnil = rozdil < 0
+    sleva = stara - nova
+    procent = sleva / stara * 100
 
-    barva = "#22c55e" if zlevnil else "#ef4444"
-    sipka = "▼" if zlevnil else "▲"
+    barva = "#22c55e"
     stara_fmt = f"{stara:,.0f} Kč".replace(",", " ")
     nova_fmt = f"{nova:,.0f} Kč".replace(",", " ")
-    rozdil_fmt = f"{abs(rozdil):,.0f} Kč".replace(",", " ")
+    sleva_fmt = f"{sleva:,.0f} Kč".replace(",", " ")
     misto = " · ".join(x for x in (z.get("ctvrt"), z.get("cast_prahy")) if x)
 
     karty_zmen += (
@@ -361,10 +360,10 @@ for z in zmeny_cen:
         f'<div style="color:#6b7280;font-size:13px">'
         f'<span style="text-decoration:line-through">{stara_fmt}</span> → '
         f'<span style="color:{barva};font-weight:700">{nova_fmt}</span></div>'
-        f'<div style="color:#6b7280;font-size:12px">{"Zlevnil" if zlevnil else "Zdražil"} o {rozdil_fmt}</div>'
+        f'<div style="color:#6b7280;font-size:12px">Zlevnil o {sleva_fmt}</div>'
         f'</div>'
         f'<div style="background:{barva};color:white;padding:8px 12px;border-radius:8px;font-weight:800;font-size:16px;white-space:nowrap;min-width:70px;text-align:center">'
-        f'{sipka} {abs(procent):.1f}%</div></div></div></a>'
+        f'▼ {procent:.1f}%</div></div></div></a>'
     )
 
 sekce_zmen = (
@@ -372,7 +371,7 @@ sekce_zmen = (
         '<div style="margin-top:28px">'
         '<h2 style="color:#334155;font-size:17px;margin:0 0 4px">💸 Změny ceny</h2>'
         f'<p style="color:#94a3b8;font-size:12px;margin:0 0 14px">'
-        f'{len(zmeny_cen)} {"byt změnil" if len(zmeny_cen) == 1 else "bytů změnilo"} cenu od doby, '
+        f'{len(zmeny_cen)} {"byt zlevnil" if len(zmeny_cen) == 1 else "bytů zlevnilo"} od doby, '
         f'co jsme vám je poslali</p>'
         f'{karty_zmen}</div>'
     )
@@ -387,7 +386,7 @@ html_report = (
     '<div style="background:linear-gradient(135deg,#0d9488,#2dd4bf);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
     '<h1 style="margin:0;color:white;font-size:22px">🏠 Podhodnocené byty · přesná analýza</h1>'
     f'<p style="margin:8px 0 0;color:#ccfbf1;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou v dané čtvrti'
-    f'{f" · {len(zmeny_cen)} změn ceny" if zmeny_cen else ""}</p>'
+    f'{f" · {len(zmeny_cen)} zlevnilo" if zmeny_cen else ""}</p>'
     "</div>"
     f"{karty}"
     f"{sekce_zmen}"
