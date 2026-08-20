@@ -8,8 +8,9 @@ je jen v textu inzeratu ("6 bytovych jednotek", "dum se 4 byty"). Cte se proto
 vzorcem z popisu (modul jednotky.py) a do karty se vedle cisla dava i veta,
 ze ktere se cetlo, aby sla spravnost overit okem.
 
-Dusledek: dum, jehoz inzerat pocet jednotek nikde neuvadi, se do mailu nedostane.
-Na vzorku 147 dnesnich inzeratu jich takovych bylo 85 z 147.
+Dum, jehoz inzerat pocet jednotek nikde neuvadi, nejde ani potvrdit, ani vyloucit -
+takovych je vetsina (85 ze 147 na vzorku cele nabidky). Nezahazuji se, ale jdou
+do druhe sekce pod carou, uzsim zapisem a bez cisla.
 
 Spousti se z .github/workflows/report.yml spolu s ostatnimi reporty.
 Prepinac --nahled misto odeslani ulozi HTML do souboru,
@@ -104,7 +105,7 @@ def stahni_nove(kraj, region_id, od):
     )
     r.raise_for_status()
 
-    nalezene = []
+    splnuje, neuvedeno = [], []
     for inzerat in r.json().get("results", []):
         # u casti inzeratu je `price` cena za metr, celek je vzdy v price_summary_czk
         cena = inzerat.get("price_summary_czk") or inzerat.get("price_czk") or 0
@@ -117,11 +118,8 @@ def stahni_nove(kraj, region_id, od):
         time.sleep(0.4)
 
         jednotek, veta = pocet_jednotek(f"{nazev}. {popis}")
-        if not jednotek or jednotek < MIN_JEDNOTEK:
-            continue
-
         lok = inzerat.get("locality", {})
-        nalezene.append({
+        dum = {
             "kraj": kraj,
             "obec": lok.get("city", ""),
             "okres": lok.get("district", ""),
@@ -129,10 +127,18 @@ def stahni_nove(kraj, region_id, od):
             "jednotek": jednotek,
             "veta": veta,
             "plocha": uzitna_plocha,
-            "cena_za_jednotku": cena / jednotek,
+            "cena_za_jednotku": cena / jednotek if jednotek else None,
             "odkaz": odkaz_na_detail(inzerat),
-        })
-    return nalezene
+        }
+
+        if jednotek is None:
+            # inzerat pocet jednotek neuvadi - nejde rict, jestli filtr splnuje
+            neuvedeno.append(dum)
+        elif jednotek >= MIN_JEDNOTEK:
+            splnuje.append(dum)
+        # dum s potvrzenymi mene nez ctyrmi jednotkami filtr proste nesplnuje
+
+    return splnuje, neuvedeno
 
 
 def karta(d):
@@ -158,6 +164,20 @@ def karta(d):
     )
 
 
+def radek_pod_carou(d):
+    """Uzsi zapis pro domy, u kterych se pocet jednotek nepodarilo zjistit."""
+    plocha = f' · {fmt(d["plocha"])} m²' if d["plocha"] else ""
+    return (
+        f'<a href="{d["odkaz"]}" style="text-decoration:none;color:inherit;display:block" target="_blank">'
+        f'<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:8px;'
+        f'border-left:3px solid #d1d5db">'
+        f'<span style="font-weight:700;font-size:14px;color:#4b5563">{d["obec"]}</span>'
+        f'<span style="color:#9ca3af;font-size:12px"> · okres {d["okres"]}</span><br>'
+        f'<span style="color:#6b7280;font-size:13px">{fmt(d["cena"])} Kč{plocha}</span>'
+        f"</div></a>"
+    )
+
+
 hodin = 24
 for arg in sys.argv[1:]:
     if arg.startswith("--hodin="):
@@ -166,22 +186,41 @@ for arg in sys.argv[1:]:
 od = datetime.now() - timedelta(hours=hodin)
 print(f"Stahuji nove cinzovni domy za poslednich {hodin} h...")
 
-domy = []
+domy, bez_poctu = [], []
 for kraj, region_id in KRAJE.items():
-    nalezene = stahni_nove(kraj, region_id, od)
-    print(f"  {kraj}: {len(nalezene)} s aspon {MIN_JEDNOTEK} jednotkami")
-    domy.extend(nalezene)
+    splnuje, neuvedeno = stahni_nove(kraj, region_id, od)
+    print(f"  {kraj}: {len(splnuje)} s aspon {MIN_JEDNOTEK} jednotkami, "
+          f"{len(neuvedeno)} bez uvedeneho poctu")
+    domy.extend(splnuje)
+    bez_poctu.extend(neuvedeno)
 
 # nejvic jednotek nahore - to je to, co na cinzaku rozhoduje
 domy.sort(key=lambda x: (-x["jednotek"], x["cena"]))
-print(f"\nCelkem {len(domy)} domu do reportu.")
+bez_poctu.sort(key=lambda x: x["cena"])
+print(f"\nCelkem {len(domy)} domu do reportu, {len(bez_poctu)} pod caru.")
 
-if not domy:
+if not domy and not bez_poctu:
     print("Nic noveho - email se neposila.")
     sys.exit(0)
 
 datum = datetime.now().strftime("%d. %m. %Y")
-souhrn = sklonuj_domy(len(domy))
+if domy:
+    souhrn = sklonuj_domy(len(domy))
+else:
+    # den, kdy prisly jen inzeraty bez uvedeneho poctu jednotek
+    souhrn = f"{len(bez_poctu)} k prověření"
+
+sekce_pod_carou = ""
+if bez_poctu:
+    sekce_pod_carou = (
+        '<div style="border-top:1px solid #e5e7eb;margin:20px 0 14px"></div>'
+        '<div style="margin:0 0 10px;padding:0 4px">'
+        '<span style="font-size:14px;font-weight:800;color:#6b7280">'
+        "❓ Počet jednotek inzerát neuvádí</span>"
+        f'<span style="color:#9ca3af;font-size:13px"> · {len(bez_poctu)}</span>'
+        "</div>"
+        + "".join(radek_pod_carou(d) for d in bez_poctu)
+    )
 
 html_report = (
     "<!DOCTYPE html><html>"
@@ -196,10 +235,11 @@ html_report = (
     "Středočeský, Ústecký a Liberecký kraj</p>"
     "</div>"
     + "".join(karta(d) for d in domy)
+    + sekce_pod_carou
     + '<div style="text-align:center;padding:16px">'
     '<p style="margin:0;color:#9ca3af;font-size:11px">Kurzívou je věta z inzerátu, ze které se '
-    "počet jednotek četl · sreality počet jednotek v datech nemá, čte se z popisu · "
-    "seřazeno podle počtu jednotek · Data ze Sreality</p>"
+    "počet jednotek četl · sreality počet jednotek v datech nemá, čte se z popisu, "
+    "a co ho neuvádí, je pod čarou · Data ze Sreality</p>"
     "</div></div></body></html>"
 )
 
