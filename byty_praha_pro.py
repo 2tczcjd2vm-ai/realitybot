@@ -142,20 +142,46 @@ def cena_za_m2(inzerat):
     return None
 
 
+def cast_podle_gps(lat, lon, tajemstvi):
+    """Městská část podle souřadnic, když ji sreality nevyplní.
+
+    Hlasuje 25 nejbližších bytů, které už máme v databázi — hranice částí se
+    tedy nikde nedrží ani neudržují.
+    """
+    if lat is None or lon is None:
+        return None
+    try:
+        r = requests.post(
+            f"{WEB}/api/mestska-cast",
+            json={"lat": lat, "lon": lon},
+            headers={"Authorization": f"Bearer {tajemstvi}"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json().get("district")
+    except Exception:
+        return None
+
+
 def ctvrt(inzerat):
     lok = inzerat.get("locality", {})
     return (lok.get("citypart") or "").strip() or (lok.get("district") or "").strip()
 
 
-def stahni(district_id, **navic):
-    """Postupně projde stránky výsledků a vrátí všechny inzeráty."""
+def stahni(**navic):
+    """Celý pražský kraj přes stránkování.
+
+    Dotazuje se na kraj, ne na jednotlivé městské části. Důvod: 14 inzerátů
+    (z 4 665) nemá vyplněnou část Prahy — sreality u nich vracejí zástupné
+    „Hlavní město Praha“. Při dotazech po částech by propadly. Takhle přijdou
+    všechny a část se jim dopočítá ze souřadnic.
+    """
     vysledky = []
     offset = 0
-    for _ in range(MAX_STRAN):
+    for _ in range(MAX_STRAN * 4):
         params = {
             "category_main_cb": 1,
             "category_type_cb": 1,
-            "locality_district_id": district_id,
             "locality_country_id": 112,
             "locality_region_id": 10,
             "limit": LIMIT,
@@ -188,8 +214,15 @@ print("Stahuji nabídku bytů v Praze...")
 vzorky = []
 # Aktuální ceny celé nabídky — proti nim se porovnávají dřív poslané byty.
 nabidka_cen = []
-for nazev_prahy, district_id in prahy.items():
-    inzeraty = stahni(district_id)
+# Inzeráty bez vyplněné části Prahy; část se jim doplní ze souřadnic, jakmile
+# bude k dispozici endpoint (potřebuje broadcast_secret, ten je až níž).
+bez_casti = []
+
+inzeraty = stahni()
+print(f"  staženo {len(inzeraty)} inzerátů z celého pražského kraje")
+po_castech = {}
+
+if True:
     pocet = 0
 
     for inzerat in inzeraty:
@@ -204,6 +237,13 @@ for nazev_prahy, district_id in prahy.items():
             continue
 
         lok = inzerat.get("locality", {})
+        nazev_prahy = (lok.get("district") or "").strip()
+        if nazev_prahy not in prahy:
+            # Sreality neurcily cast — schovame na pozdeji, dopocita se z GPS.
+            bez_casti.append((inzerat, cena, m2, hash_id))
+            continue
+
+        po_castech[nazev_prahy] = po_castech.get(nazev_prahy, 0) + 1
         nabidka_cen.append({"hash_id": str(hash_id), "cena": cena})
         vzorky.append({
             "hash_id": str(hash_id),
@@ -219,7 +259,10 @@ for nazev_prahy, district_id in prahy.items():
         })
         pocet += 1
 
-    print(f"  {nazev_prahy}: {pocet} použitelných z {len(inzeraty)} inzerátů")
+    for nazev_prahy in prahy:
+        print(f"  {nazev_prahy}: {po_castech.get(nazev_prahy, 0)} použitelných")
+    if bez_casti:
+        print(f"  bez určené části: {len(bez_casti)} — dopočítá se ze souřadnic")
 
 print(f"\nVzorků na uložení: {len(vzorky)}")
 
@@ -229,6 +272,29 @@ print(f"\nVzorků na uložení: {len(vzorky)}")
 broadcast_secret = os.environ.get("BROADCAST_SECRET")
 if not broadcast_secret:
     raise SystemExit("Chybí BROADCAST_SECRET, bez něj se vzorky nemají kam uložit.")
+
+# Inzeráty, u kterých sreality neurčily část Prahy — dopočítáme ji ze
+# souřadnic, ať nám nepropadnou. Je jich řádově pár, takže pár requestů.
+if bez_casti:
+    doplneno = 0
+    for inzerat, cena, m2, hash_id in bez_casti:
+        lok = inzerat.get("locality", {})
+        nazev_prahy = cast_podle_gps(lok.get("gps_lat"), lok.get("gps_lon"), broadcast_secret)
+        if not nazev_prahy:
+            continue
+        nabidka_cen.append({"hash_id": str(hash_id), "cena": cena})
+        vzorky.append({
+            "hash_id": str(hash_id),
+            "citypart": (lok.get("citypart") or "").strip() or nazev_prahy,
+            "citypart_seo": lok.get("citypart_seo_name") or "",
+            "district": nazev_prahy,
+            "cena_m2": round(m2),
+            "cena": cena,
+            "gps_lat": lok.get("gps_lat"),
+            "gps_lon": lok.get("gps_lon"),
+        })
+        doplneno += 1
+    print(f"  ze souřadnic doplněno: {doplneno} z {len(bez_casti)}")
 
 resp = requests.post(
     f"{WEB}/api/ceny",
@@ -272,9 +338,8 @@ def reference(nazev_ctvrti, nazev_prahy):
 print("\nStahuji nové byty za posledních 24 hodin...")
 
 byty = []
-for nazev_prahy, district_id in prahy.items():
+if True:
     inzeraty = stahni(
-        district_id,
         sort="-date",
         price_to=CENA_MAX,
         watchdog_last_changed_from=(datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S"),
@@ -290,7 +355,14 @@ for nazev_prahy, district_id in prahy.items():
         if not m2 or not cena or cena < 100000:
             continue
 
-        nazev_ctvrti = ctvrt(inzerat)
+        lok_ = inzerat.get("locality", {})
+        nazev_prahy = (lok_.get("district") or "").strip()
+        if nazev_prahy not in prahy:
+            nazev_prahy = cast_podle_gps(lok_.get("gps_lat"), lok_.get("gps_lon"), broadcast_secret)
+        if not nazev_prahy:
+            continue
+
+        nazev_ctvrti = (lok_.get("citypart") or "").strip() or nazev_prahy
         prumer, zdroj, pocet_vzorku = reference(nazev_ctvrti, nazev_prahy)
         if not prumer:
             continue
