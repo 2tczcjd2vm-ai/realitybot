@@ -62,6 +62,12 @@ dispozice_map = {
 
 print("Stahuji průměrné ceny bytů...")
 
+# Sesterske sluzby — stejny blok jako v uvitacich e-mailech z webu
+# (lib/emailTemplate.ts, PARTNERI_HTML). Kdyz se meni tam, zmenit i tady.
+PATICKA_PARTNERI = (
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 0;border-collapse:collapse"><tr><td style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:20px 22px;font-family:Arial,sans-serif"><p style="margin:0 0 12px;font-size:13px;font-weight:700;color:#0f172a">Můžeme pomoct i s dalšími kroky</p><p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#475569"><strong>Řešíte financování?</strong> Hypotékou i úvěrem se zabývá naše sesterská <a href="https://www.hypogroup.cz" style="color:#0ea5b7;text-decoration:none;font-weight:600">HypoGroup</a> — <a href="https://www.hypogroup.cz" style="color:#0ea5b7;text-decoration:none">www.hypogroup.cz</a></p><p style="margin:0;font-size:13px;line-height:1.6;color:#475569"><strong>Prodáváte byt?</strong> Postará se o něj naše realitní kancelář <a href="https://www.ttcoreal.cz" style="color:#0ea5b7;text-decoration:none;font-weight:600">TTCO Real</a> — <a href="https://www.ttcoreal.cz" style="color:#0ea5b7;text-decoration:none">www.ttcoreal.cz</a></p></td></tr></table>'
+)
+
 prahy = {
     "Praha 1": 5001,
     "Praha 2": 5002,
@@ -250,6 +256,7 @@ else:
         f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou · seřazeno podle odchylky od průměru</p>'
         "</div>"
         f"{karty}"
+        f"{PATICKA_PARTNERI}"
         '<div style="text-align:center;padding:16px">'
         '<p style="margin:0;color:#9ca3af;font-size:11px">Odchylka = (cena/m² − průměr části Prahy) / průměr · Data ze Sreality</p>'
         "</div></div></body></html>"
