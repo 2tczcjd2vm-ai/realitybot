@@ -27,3 +27,6 @@ jobs:
       - run: python chaty.py
         env:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      - run: python cinzaky_kraje.py
+        env:
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
