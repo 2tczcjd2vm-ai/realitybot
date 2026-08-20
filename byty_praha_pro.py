@@ -552,6 +552,33 @@ html_report = (
     "</div></div></body></html>"
 )
 
+# ---------------------------------------------------------------------------
+# 6. Nedělní souhrn pro platící členy
+#
+# Deset nejzajímavějších bytů za celý týden plus dnešní nabídka. Posílá se
+# jen v neděli a jen platícím — /api/broadcast-pro bere adresáty z tabulky
+# tarifů, ne z celé rozesílky, takže se placený obsah nedostane k lidem
+# v bezplatné verzi.
+# ---------------------------------------------------------------------------
+JE_NEDELE = datetime.now().weekday() == 6
+TYDENNI_TOP = 10
+
+if JE_NEDELE:
+    print()
+    print("Neděle — chystám týdenní souhrn pro platící členy.")
+    try:
+        r = requests.post(
+            f"{WEB}/api/tydenni-souhrn",
+            json={"dni": 7, "pocet": TYDENNI_TOP, "dnesni": pod_cenou},
+            headers={"Authorization": f"Bearer {broadcast_secret}"},
+            timeout=120,
+        )
+        r.raise_for_status()
+        v = r.json()
+        print(f"  souhrn z {v.get('z_kolika')} bytů týdne, odesláno {v.get('sent')} členům")
+    except Exception as e:
+        print("CHYBA týdenní souhrn: " + str(e))
+
 zprava = MIMEMultipart("alternative")
 zprava["Subject"] = f"🏠 Byty podle čtvrtí · {datum}"
 zprava["From"] = "realitybot@seznam.cz"
