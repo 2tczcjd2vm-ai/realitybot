@@ -17,9 +17,6 @@ import os
 import re
 import time
 import requests
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 
 import bezrealitky
@@ -28,7 +25,6 @@ headers = {"User-Agent": "Mozilla/5.0"}
 
 API = "https://www.sreality.cz/api/v1/estates/search"
 WEB = os.environ.get("PB_API_BASE", "https://podhodnocenebyty.cz")
-KOMU = os.environ.get("PB_PRO_EMAIL", "tomas.tuzar@seznam.cz")
 
 # Strop pro byty, ktere se ukazuji uzivateli (cilovka kupuje pro sebe).
 # POZOR: pro vypocet prumeru se tenhle strop nepouziva, viz nize.
@@ -651,12 +647,6 @@ if JE_NEDELE:
     except Exception as e:
         print("CHYBA týdenní souhrn: " + str(e))
 
-zprava = MIMEMultipart("alternative")
-zprava["Subject"] = f"🏠 Byty podle čtvrtí · {datum}"
-zprava["From"] = "realitybot@seznam.cz"
-zprava["To"] = KOMU
-zprava.attach(MIMEText(html_report, "html"))
-
 # Ulozeni pro aplikaci. Zamerne to NENI /api/ingest-byty, ktery patri
 # bezplatne verzi — kdyby do nej sypaly oba boti, jeden by druhemu prepsal
 # denni data.
@@ -672,10 +662,24 @@ try:
 except Exception as e:
     print("CHYBA ingest-pro: " + str(e))
 
+# Rozeslani platicim clenum. Driv slo SMTP na jedinou adresu z PB_PRO_EMAIL,
+# takze skutecny zakaznik placenou analyzu e-mailem nikdy nedostal - videl ji
+# jen v aplikaci a do schranky mu misto ni chodil bezplatny report.
+#
+# /api/broadcast-pro bere adresaty z tabulky tarifu a posila po jednom, takze
+# ji dostane presne ten, kdo za ni plati.
 try:
-    with smtplib.SMTP_SSL("smtp.email.cz", 465) as server:
-        server.login("realitybot@seznam.cz", os.environ.get("SMTP_PASS", "Necum123"))
-        server.sendmail("realitybot@seznam.cz", KOMU, zprava.as_string())
-    print(f"Report odeslán na {KOMU}. {len(pod_cenou)} bytů pod cenou.")
+    r = requests.post(
+        f"{WEB}/api/broadcast-pro",
+        json={"subject": f"🏠 Byty podle čtvrtí · {datum}", "html": html_report},
+        headers={"Authorization": f"Bearer {broadcast_secret}"},
+        timeout=120,
+    )
+    r.raise_for_status()
+    v = r.json()
+    print(f"Odesláno {v.get('sent')} z {v.get('celkem', 0)} platícím členům. "
+          f"{len(pod_cenou)} bytů pod cenou.")
+    if v.get("chyby"):
+        print("  neodesláno: " + str(v["chyby"]))
 except Exception as e:
-    print("CHYBA: " + str(e))
+    print("CHYBA rozesílka: " + str(e))
