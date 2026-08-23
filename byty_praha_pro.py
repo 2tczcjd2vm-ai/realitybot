@@ -79,19 +79,48 @@ def je_druzstevni(inzerat, nazev=""):
     return False
 
 
-def osobni_vlastnictvi(hash_id):
-    """Ověří v detailu inzerátu, že jde o osobní vlastnictví.
+# Ateliér a nebytová jednotka se poznají jen z popisu — sreality pro ně nemají
+# vlastní pole (flat_class zná jen Mezonet, Loft a Jednopodlažní).
+#
+# Záporný výhled `(?!ov)` je tu schválně: hledá se podstatné jméno „ateliér“,
+# „ateliéru“, „ateliérem“, ale ne přívlastek „ateliérové okno“ nebo
+# „ateliérový strop“. Bez něj se 21. 8. 2026 při testu vyhodil úplně běžný
+# byt 3+kk jen proto, že měl v popisu velkoformátové ateliérové okno.
+ATELIER_RE = re.compile(
+    r"ateli[eé]r(?!ov)|nebytov\w*\s+(?:jednotk|prostor)",
+    re.IGNORECASE,
+)
 
-    Filtr `ownership=1` v hledání ani slovo „družstevní“ v názvu nestačí:
-    19. 8. 2026 se do výběru dostal družstevní byt v Čimicích, který měl
-    v názvu jen „Prodej bytu 3+1 72 m²“, prázdné štítky a v seznamu byl
-    vedený jako osobní vlastnictví — na družstvo se přišlo až z popisu.
-    Detail inzerátu drží pole ownership (1 = osobní, 2 = družstevní), a to
-    je jediný spolehlivý zdroj.
 
-    Kontroluje se jen hrstka bytů, které se chystáme poslat, takže je to
-    pár requestů denně. Při pochybnostech vrací False — radši byt vynechat
-    než poslat družstevní.
+def provet_detail(hash_id):
+    """Stáhne detail inzerátu a vrátí dvojici (pustit_dál, důvody).
+
+    Jeden request pokryje obojí: vyřazení bytů, které do výběru nepatří,
+    a sesbírání důvodů, PROČ je byt levnější než okolí.
+
+    Vyřazuje se:
+
+    * **družstevní vlastnictví** — filtr `ownership=1` v hledání ani slovo
+      „družstevní“ v názvu nestačí: 19. 8. 2026 se do výběru dostal družstevní
+      byt v Čimicích, který měl v názvu jen „Prodej bytu 3+1 72 m²“, prázdné
+      štítky a v seznamu byl vedený jako osobní vlastnictví — na družstvo se
+      přišlo až z popisu. Detail drží pole ownership (1 = osobní), a to je
+      jediný spolehlivý zdroj.
+    * **ateliér a nebytový prostor** (rozhodnuto 21. 8. 2026 po zpětné vazbě
+      od zákaznice) — porovnávat cenu za m² ateliéru s byty je technicky
+      nesmysl. Sreality ateliér v názvu nepřiznají, ten se pozná jen z popisu.
+
+    Důvody slouží k tomu, aby uživatel nedostal jen holé „−18 %“, ale i to,
+    čím to nejspíš je. Když je seznam prázdný, je to naopak silný signál —
+    byt je levný a není vidět proč.
+
+    Záměrně se NEuvádí energetická třída: „G“ má zhruba třetina pražských
+    bytů, takže nevysvětluje rozdíl proti průměru čtvrti, který je z týchž
+    domů. Uvádět ji jako důvod by byl šum, ne informace.
+
+    Kontroluje se jen hrstka bytů, které se chystáme poslat, takže je to pár
+    requestů denně. Při pochybnostech vrací False — radši byt vynechat než
+    poslat špatný.
     """
     try:
         d = requests.get(
@@ -100,18 +129,39 @@ def osobni_vlastnictvi(hash_id):
         ).json().get("result", {})
     except Exception as e:
         print(f"  VAROVANI: detail {hash_id} se nepodařilo načíst ({e}), byt vynechán")
-        return False
+        return False, []
 
-    vlastnictvi = (d.get("ownership") or {}).get("value")
-    if vlastnictvi != 1:
-        return False
-
-    # Druhá síť: makléři občas nechají štítek špatně, ale v popisu to přiznají.
     popis = (d.get("advert_description") or "").lower()
-    if "družstev" in popis or "druzstev" in popis:
-        return False
 
-    return True
+    if (d.get("ownership") or {}).get("value") != 1:
+        return False, []
+    if "družstev" in popis or "druzstev" in popis:
+        return False, []
+    if ATELIER_RE.search(popis):
+        return False, []
+
+    duvody = []
+
+    stav = ((d.get("building_condition") or {}).get("name") or "").strip().lower()
+    if stav == "před rekonstrukcí":
+        duvody.append("Před rekonstrukcí")
+    elif stav == "špatný":
+        duvody.append("Špatný stav")
+    elif stav == "ve výstavbě":
+        duvody.append("Ve výstavbě")
+
+    if ((d.get("building_type") or {}).get("name") or "").strip().lower() == "panelová":
+        duvody.append("Panelový dům")
+
+    patro = d.get("floor_number")
+    pater = d.get("floors")
+    ma_vytah = (d.get("elevator") or {}).get("value") == 1
+    if patro == 0:
+        duvody.append("Přízemí")
+    elif patro and pater and patro >= pater and not ma_vytah:
+        duvody.append("Poslední patro bez výtahu")
+
+    return True, duvody
 
 
 def cena_inzeratu(inzerat):
@@ -478,17 +528,29 @@ if podezrele:
         print(f"  {b['odchylka']:+6.1f}%  {b['ctvrt']} · {b['cena']/1e6:.2f} mil · {b['odkaz']}")
     pod_cenou = [b for b in pod_cenou if b["odchylka"] >= PODEZRELE_LEVNE]
 
-# Poslední síto: u bytů, které se chystáme poslat, ověřit vlastnictví přímo
-# v detailu inzerátu. Až sem se dostane hrstka bytů, takže je to pár requestů.
+# Poslední síto: u bytů, které se chystáme poslat, sáhnout do detailu inzerátu.
+# Až sem se dostane hrstka bytů, takže je to pár requestů. Jedním tahem se
+# vyřadí družstva a ateliéry a sesbírají důvody, proč je byt levnější.
+#
+# Byty z Bezrealitek se neprověřují — nemají sreality hash_id a jejich detail
+# se tudy stáhnout nedá. Zůstávají tedy bez důvodů.
 if pod_cenou:
     print()
-    print(f"Ověřuji vlastnictví u {len(pod_cenou)} bytů před odesláním...")
+    print(f"Prověřuji detail u {len(pod_cenou)} bytů před odesláním...")
     proverene = []
     for b in pod_cenou:
-        if b.get("zdroj") == "bezrealitky" or osobni_vlastnictvi(b["hash_id"]):
+        if b.get("zdroj") == "bezrealitky":
+            b["duvody"] = []
             proverene.append(b)
         else:
-            print(f"  VYŘAZEN (není osobní vlastnictví): {b['nazev']} · {b['ctvrt']}")
+            ok, duvody = provet_detail(b["hash_id"])
+            if ok:
+                b["duvody"] = duvody
+                proverene.append(b)
+                if duvody:
+                    print(f"  {b['nazev']} · {b['ctvrt']} → {', '.join(duvody)}")
+            else:
+                print(f"  VYŘAZEN (družstvo / ateliér): {b['nazev']} · {b['ctvrt']}")
         time.sleep(0.3)
     if len(proverene) != len(pod_cenou):
         print(f"  Prošlo {len(proverene)} z {len(pod_cenou)}.")
@@ -543,6 +605,25 @@ for b in pod_cenou:
         else f"{b['cast_prahy']} — {b['ctvrt']} zatím nemá dost dat"
     )
 
+    # Proc je byt levnejsi. Prazdny seznam je sam o sobe sdeleni: nic
+    # zjevneho jsme nenasli, coz je presne ten pripad, ktery stoji za pozornost.
+    # U bytu z Bezrealitek se detail stahnout neda, tam se nerika nic.
+    duvody = b.get("duvody")
+    if duvody:
+        radek_duvody = (
+            f'<div style="margin-top:8px;color:#92400e;background:#fef3c7;'
+            f'border-radius:6px;padding:6px 9px;font-size:12px;line-height:1.5">'
+            f'⚠️ {" · ".join(duvody)}</div>'
+        )
+    elif duvody is not None:
+        radek_duvody = (
+            f'<div style="margin-top:8px;color:#166534;background:#dcfce7;'
+            f'border-radius:6px;padding:6px 9px;font-size:12px;line-height:1.5">'
+            f'✓ Nenašli jsme důvod, proč je pod cenou</div>'
+        )
+    else:
+        radek_duvody = ""
+
     karty += (
         f'<a href="{b["odkaz"]}" style="text-decoration:none;color:inherit;" target="_blank">'
         f'<div style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {barva}">'
@@ -553,6 +634,7 @@ for b in pod_cenou:
         f'<div style="color:#6b7280;font-size:13px">💰 Cena: {cena_fmt}</div>'
         f'<div style="color:#6b7280;font-size:13px">📐 Cena/m²: {cena_m2_fmt}</div>'
         f'<div style="color:#6b7280;font-size:13px">📊 Obvyklá cena {zaklad}: {prumer_fmt}</div>'
+        f'{radek_duvody}'
         f'</div>'
         f'<div style="background:{barva};color:white;padding:8px 12px;border-radius:8px;font-weight:800;font-size:18px;white-space:nowrap;min-width:70px;text-align:center">'
         f'{odchylka:+.1f}%</div></div></div></a>'
