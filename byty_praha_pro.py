@@ -540,7 +540,10 @@ if pod_cenou:
     proverene = []
     for b in pod_cenou:
         if b.get("zdroj") == "bezrealitky":
-            b["duvody"] = []
+            # Klíč se ZÁMĚRNĚ nenastavuje. Prázdný seznam znamená „hledali jsme
+            # a nic nenašli“ a vykreslí se zeleně jako „Nenašli jsme důvod“ —
+            # jenže u Bezrealitek jsme nehledali vůbec, detail sreality nemají.
+            # Chybějící klíč zajistí, že se u nich neukáže nic.
             proverene.append(b)
         else:
             ok, duvody = provet_detail(b["hash_id"])
