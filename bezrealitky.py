@@ -138,6 +138,15 @@ def nacti_prazske_byty(urci_mestskou_cast, log=print):
             "gps_lat": gps.get("lat"),
             "gps_lon": gps.get("lng"),
             "odkaz": url,
+            # Podklady pro rozbor „proč je levnější“. Nic se kvůli nim
+            # nestahuje navíc — celý inzerát už v ruce máme, jen jsme z něj
+            # dosud četli pár polí. Vyhodnocuje je byty_praha_pro.py, aby
+            # názvy důvodů byly stejné jako u sreality a nežily na dvou místech.
+            "stav": adv.get("condition"),
+            "konstrukce": adv.get("construction"),
+            "vytah": adv.get("lift"),
+            "pater_celkem": adv.get("totalFloors"),
+            "popis": adv.get("description") or "",
         })
 
     log(f"  použitelných: {len(byty)}")

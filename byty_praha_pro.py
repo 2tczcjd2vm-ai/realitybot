@@ -164,6 +164,50 @@ def provet_detail(hash_id):
     return True, duvody
 
 
+# Převod hodnot z Bezrealitek na stejné názvy důvodů, jaké dává sreality.
+# Uživatel má vidět jeden slovník, ať byt přitekl odkudkoli.
+BZ_STAVY = {
+    "BAD": "Špatný stav",
+    # Tyhle dvě se ve vzorku 130 inzerátů neobjevily, takže názvy nejsou
+    # ověřené. Kdyby je Bezrealitky psaly jinak, důvod se prostě neukáže —
+    # nic se nerozbije a nic nepravdivého se netvrdí.
+    "BEFORE_RECONSTRUCTION": "Před rekonstrukcí",
+    "UNDER_CONSTRUCTION": "Ve výstavbě",
+}
+
+
+def duvody_bezrealitky(byt):
+    """Důvody nižší ceny u bytu z Bezrealitek — (pustit_dál, důvody).
+
+    Vrací stejný tvar jako provet_detail, aby se s oběma zdroji zacházelo
+    jednotně. Na rozdíl od sreality se kvůli tomu nestahuje vůbec nic:
+    bezrealitky.py má celý inzerát v ruce už při načítání a potřebná pole
+    posílá s sebou.
+    """
+    if ATELIER_RE.search(byt.get("popis") or ""):
+        return False, []
+
+    duvody = []
+
+    stav = BZ_STAVY.get(byt.get("stav"))
+    if stav:
+        duvody.append(stav)
+
+    if byt.get("konstrukce") == "PANEL":
+        duvody.append("Panelový dům")
+
+    # Patro se u Bezrealitek ZÁMĚRNĚ nevyhodnocuje. Pole `etage` má hodnotu 1
+    # u třetiny inzerátů a znamená pokaždé něco jiného — ověřeno 24. 8. 2026
+    # na textech samotných inzerátů: „1. NP (zvýšené přízemí)“, „ve sníženém
+    # přízemí“, ale i „byt se nachází v 1. patře“. Prodávající to vyplňují
+    # každý po svém, takže by z toho vznikala nepravdivá tvrzení.
+    #
+    # U sreality to problém není: `floor_number` je 0 jen u zhruba jednoho
+    # inzerátu ze sedmdesáti, což odpovídá tomu, jak vzácné přízemní byty jsou.
+
+    return True, duvody
+
+
 def cena_inzeratu(inzerat):
     return inzerat.get("price_czk") or inzerat.get("price") or 0
 
@@ -528,33 +572,37 @@ if podezrele:
         print(f"  {b['odchylka']:+6.1f}%  {b['ctvrt']} · {b['cena']/1e6:.2f} mil · {b['odkaz']}")
     pod_cenou = [b for b in pod_cenou if b["odchylka"] >= PODEZRELE_LEVNE]
 
-# Poslední síto: u bytů, které se chystáme poslat, sáhnout do detailu inzerátu.
-# Až sem se dostane hrstka bytů, takže je to pár requestů. Jedním tahem se
-# vyřadí družstva a ateliéry a sesbírají důvody, proč je byt levnější.
+# Poslední síto: u bytů, které se chystáme poslat, vyřadit družstva a ateliéry
+# a sesbírat důvody, proč je byt levnější než okolí.
 #
-# Byty z Bezrealitek se neprověřují — nemají sreality hash_id a jejich detail
-# se tudy stáhnout nedá. Zůstávají tedy bez důvodů.
+# Oba zdroje projdou stejným sítem, jen si data berou odjinud: u sreality se
+# stáhne detail inzerátu (pár requestů, jde jen o hrstku bytů), Bezrealitky
+# mají potřebná pole rovnou u sebe. Slovník důvodů je pro obojí společný.
 if pod_cenou:
     print()
-    print(f"Prověřuji detail u {len(pod_cenou)} bytů před odesláním...")
+    print(f"Prověřuji {len(pod_cenou)} bytů před odesláním...")
     proverene = []
     for b in pod_cenou:
-        if b.get("zdroj") == "bezrealitky":
-            # Klíč se ZÁMĚRNĚ nenastavuje. Prázdný seznam znamená „hledali jsme
-            # a nic nenašli“ a vykreslí se zeleně jako „Nenašli jsme důvod“ —
-            # jenže u Bezrealitek jsme nehledali vůbec, detail sreality nemají.
-            # Chybějící klíč zajistí, že se u nich neukáže nic.
-            proverene.append(b)
+        z_bezrealitek = b.get("zdroj") == "bezrealitky"
+        if z_bezrealitek:
+            ok, duvody = duvody_bezrealitky(b)
         else:
             ok, duvody = provet_detail(b["hash_id"])
-            if ok:
-                b["duvody"] = duvody
-                proverene.append(b)
-                if duvody:
-                    print(f"  {b['nazev']} · {b['ctvrt']} → {', '.join(duvody)}")
-            else:
-                print(f"  VYŘAZEN (družstvo / ateliér): {b['nazev']} · {b['ctvrt']}")
-        time.sleep(0.3)
+
+        # Popis je jen podklad pro rozbor, do databáze ani do e-mailu nepatří —
+        # jsou to kilobajty textu na každý byt.
+        b.pop("popis", None)
+
+        if ok:
+            b["duvody"] = duvody
+            proverene.append(b)
+            if duvody:
+                print(f"  {b['nazev']} · {b['ctvrt']} → {', '.join(duvody)}")
+        else:
+            print(f"  VYŘAZEN (družstvo / ateliér): {b['nazev']} · {b['ctvrt']}")
+
+        if not z_bezrealitek:
+            time.sleep(0.3)
     if len(proverene) != len(pod_cenou):
         print(f"  Prošlo {len(proverene)} z {len(pod_cenou)}.")
     pod_cenou = proverene
