@@ -36,6 +36,40 @@ MAX_STRAN = 5
 
 ZELENA_HRANICE = -10
 
+# Zkusebni beh: PB_NASUCHO=1 necha bota spocitat uplne vsechno, ale nic
+# neodesle — zadny e-mail, zadna rozesilka platicim, zadny zapis nalezu.
+#
+# Cenove vzorky se ukladaji i nasucho, a to zamerne: je to jen zaznam toho,
+# co je zrovna na trhu, nic se tim nikomu neposle a klouzave okno 90 dni ma
+# smysl plnit co nejdriv.
+NASUCHO = os.environ.get("PB_NASUCHO") == "1"
+
+# ---------------------------------------------------------------------------
+# Mesta, ktera bot sleduje.
+#
+# `dotaz` jsou parametry do sreality API. Praha se pta na cely kraj, protoze
+# 14 inzeratu ze 4 665 nema vyplnenou mestskou cast a pri dotazech po castech
+# by propadly. Ostatni mesta se ptaji na okres, jehoz ID je overene proti
+# navratovemu `locality.city` (24. 8. 2026).
+#
+# `casti` je seznam povolenych hodnot `locality.district`. U Prahy jsou to
+# mestske casti, protoze prumer se pocita za kazdou zvlast. U ostatnich mest
+# je None — tam je celé mesto jeden koš a filtruje se podle `locality.city`,
+# aby do vysledku nespadly okolni obce (okres Ostrava obsahuje i Horni Lhotu).
+#
+# Objemy zmerene 24. 8. 2026: Praha ~4 400 inzeratu, Brno a Ostrava po 500,
+# Plzen 427, Liberec 326, Olomouc 332. Mimo Prahu tedy zhruba desetkrat min,
+# takze prumer za ctvrt se tam zpocatku bude vetsinou pocitat az z fallbacku
+# za cele mesto a zpresnovat se, jak databaze nabiha.
+MESTA = [
+    {"klic": "praha", "nazev": "Praha", "dotaz": {"locality_region_id": 10}, "casti": True},
+    {"klic": "brno", "nazev": "Brno", "dotaz": {"locality_district_id": 72}, "casti": None},
+    {"klic": "ostrava", "nazev": "Ostrava", "dotaz": {"locality_district_id": 65}, "casti": None},
+    {"klic": "plzen", "nazev": "Plzeň", "dotaz": {"locality_district_id": 12}, "casti": None},
+    {"klic": "liberec", "nazev": "Liberec", "dotaz": {"locality_district_id": 22}, "casti": None},
+    {"klic": "olomouc", "nazev": "Olomouc", "dotaz": {"locality_district_id": 42}, "casti": None},
+]
+
 # Spodni mez duveryhodnosti. Byt vyrazne pod cenou ctvrti neni nalez, ale
 # varovny signal — 19. 8. 2026 se objevil inzerat za 58 tis./m2 v Libni, kde
 # je obvykla cena 166 tis. Mel strojove generovany popis ("Zrna vytahu"),
@@ -45,12 +79,6 @@ ZELENA_HRANICE = -10
 # byva podvod, prodej podilu, nebo chyba v inzeratu. Vypisuje se do logu,
 # aby se nic neztracelo potichu.
 PODEZRELE_LEVNE = -45
-
-# Sesterske sluzby — stejny blok jako v uvitacich e-mailech z webu
-# (lib/emailTemplate.ts, PARTNERI_HTML). Kdyz se meni tam, zmenit i tady.
-PATICKA_PARTNERI = (
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 0;border-collapse:collapse"><tr><td style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:20px 22px;font-family:Arial,sans-serif"><p style="margin:0 0 16px;font-size:13px;font-weight:700;color:#0f172a">Můžeme pomoct i s dalšími kroky</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><td width="150" valign="middle" style="padding:0 16px 16px 0"><a href="https://www.hypogroup.cz"><img src="https://podhodnocenebyty.cz/hypogroup_zlate.png" alt="HypoGroup" width="132" style="display:block;width:132px;height:auto;border:0"></a></td><td valign="middle" style="padding:0 0 16px;font-size:13px;line-height:1.6;color:#475569">V případě zájmu o financování nás můžete nezávazně kontaktovat na <a href="https://www.hypogroup.cz" style="color:#0ea5b7;text-decoration:none;font-weight:600">www.hypogroup.cz</a>.</td></tr><tr><td width="150" valign="middle" style="padding:0 16px 0 0"><a href="https://www.ttcoreal.cz"><img src="https://podhodnocenebyty.cz/ttco-real.png" alt="TTCO Real" width="74" style="display:block;width:74px;height:auto;border:0;border-radius:6px"></a></td><td valign="middle" style="font-size:13px;line-height:1.6;color:#475569"><strong>Řešíte prodej nemovitosti?</strong> Kontaktujte nás nezávazně na <a href="https://www.ttcoreal.cz" style="color:#0ea5b7;text-decoration:none;font-weight:600">www.ttcoreal.cz</a>. Máme nejnižší provize na trhu.</td></tr></table></td></tr></table>'
-)
 
 prahy = {
     "Praha 1": 5001,
@@ -734,11 +762,10 @@ sekce_zmen = (
     if zmeny_cen else ""
 )
 
+# Fragment, ne cely dokument. Obalku (hlavicku, paticku i blok partneru)
+# pridava emailShell na strane webu ve /api/broadcast-pro — kdyby si je bot
+# pridaval taky, vyjdou v mailu dvakrat.
 html_report = (
-    "<!DOCTYPE html><html>"
-    '<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
-    '<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,sans-serif">'
-    '<div style="max-width:600px;margin:0 auto;padding:16px">'
     '<div style="background:linear-gradient(135deg,#0d9488,#2dd4bf);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
     '<h1 style="margin:0;color:white;font-size:22px">🏠 Podhodnocené byty · přesná analýza</h1>'
     f'<p style="margin:8px 0 0;color:#ccfbf1;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou v dané čtvrti'
@@ -746,11 +773,10 @@ html_report = (
     "</div>"
     f"{karty}"
     f"{sekce_zmen}"
-    f"{PATICKA_PARTNERI}"
     '<div style="text-align:center;padding:16px">'
     '<p style="margin:0;color:#9ca3af;font-size:11px">Odchylka = (cena/m² − obvyklá cena ve čtvrti) / obvyklá cena · '
     'Obvyklá cena je medián z nabídky za posledních 90 dní · Data ze Sreality</p>'
-    "</div></div></body></html>"
+    "</div>"
 )
 
 # ---------------------------------------------------------------------------
