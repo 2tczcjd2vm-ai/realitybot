@@ -286,14 +286,17 @@ def ctvrt(inzerat):
     return (lok.get("citypart") or "").strip() or (lok.get("district") or "").strip()
 
 
-def stahni(**navic):
-    """Celý pražský kraj přes stránkování.
+def stahni(mesto=None, **navic):
+    """Nabídka jednoho města přes stránkování.
 
-    Dotazuje se na kraj, ne na jednotlivé městské části. Důvod: 14 inzerátů
-    (z 4 665) nemá vyplněnou část Prahy — sreality u nich vracejí zástupné
-    „Hlavní město Praha“. Při dotazech po částech by propadly. Takhle přijdou
-    všechny a část se jim dopočítá ze souřadnic.
+    Bez argumentu bere Prahu, aby stávající volání zůstala beze změny.
+
+    U Prahy se ptáme na celý kraj, ne na jednotlivé městské části. Důvod:
+    14 inzerátů (z 4 665) nemá vyplněnou část Prahy — sreality u nich vracejí
+    zástupné „Hlavní město Praha“. Při dotazech po částech by propadly.
+    Takhle přijdou všechny a část se jim dopočítá ze souřadnic.
     """
+    dotaz = (mesto or MESTA[0])["dotaz"]
     vysledky = []
     offset = 0
     for _ in range(MAX_STRAN * 4):
@@ -301,12 +304,12 @@ def stahni(**navic):
             "category_main_cb": 1,
             "category_type_cb": 1,
             "locality_country_id": 112,
-            "locality_region_id": 10,
             "limit": LIMIT,
             "offset": offset,
             "lang": "cs",
             "ownership": 1,
             "no_auction": 1,
+            **dotaz,
         }
         params.update(navic)
         data = requests.get(API, params=params, headers=headers, timeout=60).json()
@@ -382,6 +385,52 @@ if True:
     if bez_casti:
         print(f"  bez určené části: {len(bez_casti)} — dopočítá se ze souřadnic")
 
+# ---------------------------------------------------------------------------
+# 1b. Cenová báze ostatních měst
+#
+# Zatím se z nich POUZE sbírají ceny, denní analýza je dál jen pražská.
+# Důvod je v tom klouzavém okně: průměr za čtvrť potřebuje historii, a ta
+# roste jen časem. Čím dřív se začne plnit, tím dřív půjde v těch městech
+# spustit analýzu, která bude stát za peníze.
+#
+# `district` se u nich nastavuje na název města, ne na `locality.district`
+# ze sreality. Fallback tak padne na celé město, což je při ~400 inzerátech
+# správná úroveň — a v e-mailu se pak čte „Obvyklá cena Brno“.
+#
+# Filtruje se podle `locality.city`, protoze okres obsahuje i okolni obce:
+# v okrese Ostrava jsou i Horni Lhota a dalsi (overeno 24. 8. 2026).
+for mesto in MESTA[1:]:
+    nalezeno = 0
+    try:
+        for inzerat in stahni(mesto):
+            lok = inzerat.get("locality", {})
+            if (lok.get("city") or "").strip() != mesto["nazev"]:
+                continue
+            nazev = inzerat.get("advert_name", "") or ""
+            if je_druzstevni(inzerat, nazev):
+                continue
+            cena = cena_inzeratu(inzerat)
+            m2 = cena_za_m2(inzerat)
+            hash_id = inzerat.get("hash_id")
+            if not m2 or not cena or cena < 100000 or not hash_id:
+                continue
+            vzorky.append({
+                "hash_id": str(hash_id),
+                "citypart": (lok.get("citypart") or "").strip() or mesto["nazev"],
+                "citypart_seo": lok.get("citypart_seo_name") or "",
+                "district": mesto["nazev"],
+                "cena_m2": round(m2),
+                "cena": cena,
+                "gps_lat": lok.get("gps_lat"),
+                "gps_lon": lok.get("gps_lon"),
+            })
+            nalezeno += 1
+        print(f"  {mesto['nazev']}: {nalezeno} použitelných")
+    except Exception as e:
+        # Výpadek jednoho města nesmí shodit pražskou analýzu, kvůli které
+        # bot běží především.
+        print(f"  {mesto['nazev']}: CHYBA {e} — přeskakuji")
+
 print(f"\nVzorků na uložení: {len(vzorky)}")
 
 # ---------------------------------------------------------------------------
@@ -456,8 +505,16 @@ def reference(nazev_ctvrti, nazev_prahy):
 print("\nStahuji nové byty za posledních 24 hodin...")
 
 byty = []
-if True:
+for mesto in MESTA:
+    # Praha se rozpada na mestske casti, protoze pro kazdou mame vlastni
+    # prumer. Ostatni mesta jsou zatim jeden kos — jejich ctvrti vetsinou
+    # nemaji dost vzorku, takze `reference()` stejne sahne po prumeru za cele
+    # mesto. Az jich databaze nasbira dost, zpresni se to samo bez zasahu.
+    je_praha = mesto["casti"] is True
+    pred = len(byty)
+
     inzeraty = stahni(
+        mesto,
         sort="-date",
         price_to=CENA_MAX,
         watchdog_last_changed_from=(datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S"),
@@ -474,9 +531,16 @@ if True:
             continue
 
         lok_ = inzerat.get("locality", {})
-        nazev_prahy = (lok_.get("district") or "").strip()
-        if nazev_prahy not in prahy:
-            nazev_prahy = cast_podle_gps(lok_.get("gps_lat"), lok_.get("gps_lon"), broadcast_secret)
+        if je_praha:
+            nazev_prahy = (lok_.get("district") or "").strip()
+            if nazev_prahy not in prahy:
+                nazev_prahy = cast_podle_gps(lok_.get("gps_lat"), lok_.get("gps_lon"), broadcast_secret)
+        else:
+            # Okres obsahuje i okolni obce (v ostravskem je treba Horni Lhota),
+            # takze se drzime toho, co sreality uvadeji jako mesto.
+            if (lok_.get("city") or "").strip() != mesto["nazev"]:
+                continue
+            nazev_prahy = mesto["nazev"]
         if not nazev_prahy:
             continue
 
@@ -508,10 +572,13 @@ if True:
             "cena_za_m2": m2,
             "prumer_ctvrti": prumer,
             "odchylka": ((m2 - prumer) / prumer) * 100,
+            "mesto": mesto["nazev"],
             "zdroj_prumeru": zdroj,
             "pocet_vzorku": pocet_vzorku,
             "odkaz": odkaz,
         })
+
+    print(f"  {mesto['nazev']}: {len(byty) - pred} nových k posouzení")
 
 # ---------------------------------------------------------------------------
 # 3b. Druhý zdroj: Bezrealitky
@@ -558,6 +625,11 @@ try:
     # PB_SEED_BEZREALITKY=1 pri uplne prvnim behu: stavajici nabidka se jen
     # zaeviduje a nic se neohlasi.
     seed = os.environ.get("PB_SEED_BEZREALITKY") == "1"
+    # Nasucho se evidence nesmi zapsat. Endpoint si pamatuje, co uz videl,
+    # takze kdyby zkusebni beh probehl pred ostrym, oznacil by dnesni novinky
+    # za videne a ostry beh by je preskocil — tise by se ztratily.
+    if NASUCHO:
+        raise RuntimeError("nasucho")
     r = requests.post(
         f"{WEB}/api/nove-inzeraty",
         json={"zdroj": "bezrealitky",
@@ -642,11 +714,37 @@ if pod_cenou:
 # Endpoint zároveň zařadí dnešní výběr mezi sledované, a to v tomhle pořadí:
 # obráceně by se dnešním bytům rovnou zapsala aktuální cena a změna by zanikla.
 # ---------------------------------------------------------------------------
+# Pražský výběr.
+#
+# Analýza běží pro všechna města a ukládá se celá (viz /api/ingest-pro níž).
+# Tenhle užší výběr je jen pro dvě věci, které Prahu opravdu vyžadují:
+#
+#  - sledování zlevnění: `nabidka_cen` se plní v kroku 1 jen z Prahy, takže
+#    u bytu z jiného města by se změna ceny neměla z čeho poznat,
+#  - nedělní souhrn, který se zatím posílá všem stejný.
+#
+# Denní report tímhle NEPROCHÁZÍ — ten se skládá každému zvlášť podle měst,
+# která si vybral v profilu.
+#
+# Musí stát před voláním /api/zmeny-cen, které z něj čte.
+# ---------------------------------------------------------------------------
+MESTA_DO_MAILU = {"Praha"}
+pod_cenou_mail = [b for b in pod_cenou if b.get("mesto", "Praha") in MESTA_DO_MAILU]
+
+# ---------------------------------------------------------------------------
 zmeny_cen = []
+if NASUCHO:
+    print("NASUCHO: /api/zmeny-cen se přeskakuje (zapisuje sledované byty)")
 try:
+    if NASUCHO:
+        raise RuntimeError("nasucho")
     resp = requests.post(
         f"{WEB}/api/zmeny-cen",
-        json={"aktualni": nabidka_cen, "pridat": pod_cenou},
+        # Sledovani zlevneni je zatim take jen prazske: `nabidka_cen` se plni
+        # v kroku 1 jen z Prahy, takze u bytu z jinych mest by se zdrazeni ani
+        # zlevneni nemelo z ceho poznat. Az prijdou predvolby mest, rozsiri se
+        # obojí naraz.
+        json={"aktualni": nabidka_cen, "pridat": pod_cenou_mail},
         headers={"Authorization": f"Bearer {broadcast_secret}"},
         timeout=120,
     )
@@ -658,66 +756,22 @@ try:
 except Exception as e:
     print("CHYBA zmeny-cen: " + str(e))
 
+
+
 if not pod_cenou and not zmeny_cen:
     raise SystemExit(
         f"Z {len(byty)} nových bytů není žádný pod cenou v dané čtvrti "
         f"a nikdo ze sledovaných nezlevnil – e-mail se neposílá."
     )
 
-print(f"Pod cenou své čtvrti: {len(pod_cenou)} z {len(byty)} nových bytů.")
+print(f"Pod cenou své čtvrti: {len(pod_cenou)} z {len(byty)} nových bytů "
+      f"({len(pod_cenou_mail)} z Prahy). Komu co půjde do e-mailu, "
+      f"rozhoduje profil každého člena.")
 
-datum = datetime.now().strftime("%d. %m. %Y")
-karty = ""
-
-for b in pod_cenou:
-    odchylka = b["odchylka"]
-    barva = "#22c55e" if odchylka < -10 else "#f59e0b" if odchylka < 0 else "#ef4444"
-
-    cena_fmt = f"{b['cena']:,.0f} Kč".replace(",", " ")
-    cena_m2_fmt = f"{b['cena_za_m2']:,.0f} Kč/m²".replace(",", " ")
-    prumer_fmt = f"{b['prumer_ctvrti']:,.0f} Kč/m²".replace(",", " ")
-
-    # Kdyz ctvrt nema dost vzorku, rekneme to rovnou — cislo je hrubsi.
-    zaklad = (
-        f"{b['ctvrt']} ({b['pocet_vzorku']} bytů)"
-        if b["zdroj_prumeru"] == "ctvrt"
-        else f"{b['cast_prahy']} — {b['ctvrt']} zatím nemá dost dat"
-    )
-
-    # Proc je byt levnejsi. Prazdny seznam je sam o sobe sdeleni: nic
-    # zjevneho jsme nenasli, coz je presne ten pripad, ktery stoji za pozornost.
-    # U bytu z Bezrealitek se detail stahnout neda, tam se nerika nic.
-    duvody = b.get("duvody")
-    if duvody:
-        radek_duvody = (
-            f'<div style="margin-top:8px;color:#92400e;background:#fef3c7;'
-            f'border-radius:6px;padding:6px 9px;font-size:12px;line-height:1.5">'
-            f'⚠️ {" · ".join(duvody)}</div>'
-        )
-    elif duvody is not None:
-        radek_duvody = (
-            f'<div style="margin-top:8px;color:#166534;background:#dcfce7;'
-            f'border-radius:6px;padding:6px 9px;font-size:12px;line-height:1.5">'
-            f'✓ Nenašli jsme důvod, proč je pod cenou</div>'
-        )
-    else:
-        radek_duvody = ""
-
-    karty += (
-        f'<a href="{b["odkaz"]}" style="text-decoration:none;color:inherit;" target="_blank">'
-        f'<div style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-left:4px solid {barva}">'
-        f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-        f'<div style="flex:1;padding-right:12px">'
-        f'<div style="font-weight:700;font-size:15px;color:#1d4ed8;margin-bottom:6px">{b["nazev"]}</div>'
-        f'<div style="color:#6b7280;font-size:12px;margin-bottom:4px">📍 {b["ctvrt"]} · {b["cast_prahy"]}</div>'
-        f'<div style="color:#6b7280;font-size:13px">💰 Cena: {cena_fmt}</div>'
-        f'<div style="color:#6b7280;font-size:13px">📐 Cena/m²: {cena_m2_fmt}</div>'
-        f'<div style="color:#6b7280;font-size:13px">📊 Obvyklá cena {zaklad}: {prumer_fmt}</div>'
-        f'{radek_duvody}'
-        f'</div>'
-        f'<div style="background:{barva};color:white;padding:8px 12px;border-radius:8px;font-weight:800;font-size:18px;white-space:nowrap;min-width:70px;text-align:center">'
-        f'{odchylka:+.1f}%</div></div></div></a>'
-    )
+# Karty bytu uz nestaví bot. Kazdy clen ma v profilu svoje mesta a svoji
+# frekvenci, takze e-mail se sklada az na webu ve /api/report-pro, kde je
+# znamy adresat. Tady zustava jen sekce se zlevnenimi, ktera se pocita
+# z prazske nabidky a web ji nema odkud vzit.
 
 # --- sekce Změny ceny ------------------------------------------------------
 karty_zmen = ""
@@ -765,19 +819,6 @@ sekce_zmen = (
 # Fragment, ne cely dokument. Obalku (hlavicku, paticku i blok partneru)
 # pridava emailShell na strane webu ve /api/broadcast-pro — kdyby si je bot
 # pridaval taky, vyjdou v mailu dvakrat.
-html_report = (
-    '<div style="background:linear-gradient(135deg,#0d9488,#2dd4bf);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
-    '<h1 style="margin:0;color:white;font-size:22px">🏠 Podhodnocené byty · přesná analýza</h1>'
-    f'<p style="margin:8px 0 0;color:#ccfbf1;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou v dané čtvrti'
-    f'{f" · {len(zmeny_cen)} zlevnilo" if zmeny_cen else ""}</p>'
-    "</div>"
-    f"{karty}"
-    f"{sekce_zmen}"
-    '<div style="text-align:center;padding:16px">'
-    '<p style="margin:0;color:#9ca3af;font-size:11px">Odchylka = (cena/m² − obvyklá cena ve čtvrti) / obvyklá cena · '
-    'Obvyklá cena je medián z nabídky za posledních 90 dní · Data ze Sreality</p>'
-    "</div>"
-)
 
 # ---------------------------------------------------------------------------
 # 6. Nedělní souhrn pro platící členy
@@ -790,13 +831,16 @@ html_report = (
 JE_NEDELE = datetime.now().weekday() == 6
 TYDENNI_TOP = 10
 
-if JE_NEDELE:
+if JE_NEDELE and NASUCHO:
+    print()
+    print("NASUCHO: nedělní souhrn se přeskakuje (rozesílá platícím členům)")
+elif JE_NEDELE:
     print()
     print("Neděle — chystám týdenní souhrn pro platící členy.")
     try:
         r = requests.post(
             f"{WEB}/api/tydenni-souhrn",
-            json={"dni": 7, "pocet": TYDENNI_TOP, "dnesni": pod_cenou},
+            json={"dni": 7, "pocet": TYDENNI_TOP, "dnesni": pod_cenou_mail},
             headers={"Authorization": f"Bearer {broadcast_secret}"},
             timeout=120,
         )
@@ -810,6 +854,8 @@ if JE_NEDELE:
 # bezplatne verzi — kdyby do nej sypaly oba boti, jeden by druhemu prepsal
 # denni data.
 try:
+    if NASUCHO:
+        raise RuntimeError("nasucho")
     resp = requests.post(
         f"{WEB}/api/ingest-pro",
         json={"date": datetime.now().strftime("%Y-%m-%d"), "byty": pod_cenou},
@@ -821,23 +867,28 @@ try:
 except Exception as e:
     print("CHYBA ingest-pro: " + str(e))
 
-# Rozeslani platicim clenum. Driv slo SMTP na jedinou adresu z PB_PRO_EMAIL,
-# takze skutecny zakaznik placenou analyzu e-mailem nikdy nedostal - videl ji
-# jen v aplikaci a do schranky mu misto ni chodil bezplatny report.
+# Rozeslani platicim clenum.
 #
-# /api/broadcast-pro bere adresaty z tabulky tarifu a posila po jednom, takze
-# ji dostane presne ten, kdo za ni plati.
+# Bot uz e-mail neskláda. Kazdy clen ma v profilu svoje mesta a svoji
+# frekvenci, takze obsah se lisi clovek od cloveka — jedno spolecne HTML by
+# to neumelo. /api/report-pro si proto vezme byty z databaze (ulozene o kousek
+# vyse pres /api/ingest-pro) a slozi kazdemu jeho vlastni report.
+#
+# Posila se jen fragment se zlevnenimi: ten se pocita tady z prazske nabidky
+# a web ho nema odkud vzit.
 try:
+    if NASUCHO:
+        raise RuntimeError("nasucho")
     r = requests.post(
-        f"{WEB}/api/broadcast-pro",
-        json={"subject": f"🏠 Byty podle čtvrtí · {datum}", "html": html_report},
+        f"{WEB}/api/report-pro",
+        json={"zmeny_html": sekce_zmen},
         headers={"Authorization": f"Bearer {broadcast_secret}"},
         timeout=120,
     )
     r.raise_for_status()
     v = r.json()
-    print(f"Odesláno {v.get('sent')} z {v.get('celkem', 0)} platícím členům. "
-          f"{len(pod_cenou)} bytů pod cenou.")
+    print(f"Report odeslán {v.get('sent')} z {v.get('adresatu', 0)} členům, "
+          f"{v.get('bez_bytu', 0)} bez nálezu.")
     if v.get("chyby"):
         print("  neodesláno: " + str(v["chyby"]))
 except Exception as e:
