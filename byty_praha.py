@@ -150,7 +150,16 @@ for nazev_prahy, district_id in prahy.items():
         print(f"  {nazev_prahy}: {ceny_prahy[nazev_prahy]:,.0f} Kč/m²")
 
 print()
-print("Stahuji nové byty za posledních 24 hodin...")
+# Bezplatna verze ukazuje byty se zpozdenim jednoho dne.
+#
+# Duvod je obchodni, ne technicky: bezplatna verze delala tutez praci jako
+# placena, jen o neco hrubeji, takze nebyl duvod platit. U podhodnoceneho bytu
+# je pritom hodnota v tom byt prvni — za den je po nem cast zajemcu.
+# Zpozdeni tedy dela z placene verze jinou sluzbu, ne jen lepsi.
+#
+# Okno je proto 24 az 48 hodin zpetne. Overeno, ze sreality horni mez umi:
+# vysledek presne odpovida rozdilu obou dotazu, bez prekryvu s poslednim dnem.
+print("Stahuji byty za obdobi 24-48 hodin zpet (bezplatna verze ma denni zpozdeni)...")
 
 byty = []
 for nazev_prahy, district_id in prahy.items():
@@ -168,7 +177,8 @@ for nazev_prahy, district_id in prahy.items():
         "ownership": 1,
         "price_to": 8000000,
         "no_auction": 1,
-        "watchdog_last_changed_from": (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S"),
+        "watchdog_last_changed_from": (datetime.now() - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%S"),
+        "watchdog_last_changed_to": (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S"),
     }
     response = requests.get(url, params=params, headers=headers)
     data = response.json()
@@ -289,6 +299,7 @@ else:
         '<div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:28px;text-align:center;border-radius:12px;margin-bottom:16px">'
         f'<h1 style="margin:0;color:white;font-size:22px">🏠 Nové podhodnocené byty Praha</h1>'
         f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou · seřazeno podle odchylky od průměru</p>'
+        '<p style="margin:10px 0 0;color:#ede9fe;font-size:12px;opacity:.85">Bezplatná verze ukazuje byty s denním zpožděním — platící členové je dostali včera.</p>' 
         "</div>"
         f"{karty}"
         f"{APLIKACE_BLOK}"
