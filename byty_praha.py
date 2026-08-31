@@ -67,6 +67,32 @@ print("Stahuji průměrné ceny bytů...")
 #
 # POZOR: report jde celou rozesilkou, tedy i pripadnym platicim clenum —
 # ti ho uvidi taky. Az jich bude vic, bude potreba rozesilku rozdelit.
+# Odkaz do aplikace.
+#
+# Sestimistny kod je vazany na prohlizec, ktery si o nej rekl — kdo si ho
+# vyzada na pocitaci, v telefonu uz ho nepouzije. Report se ale cte hlavne
+# na telefonu, takze odkaz vede na prihlaseni s uz vyplnenym e-mailem:
+# clovek jen klepne na "poslat kod", ten mu prijde do teze schranky a je
+# uvnitr — bez opisovani adresy na male klavesnici.
+#
+# Podepsany odkaz, ktery prihlasuje rovnou (jako v placenem reportu), tu
+# udelat nejde: bezplatny report jde jednim HTML pres Resend broadcast,
+# takze pro kazdeho prijemce zvlast se podepsat necim neda. {{{EMAIL}}}
+# doplnuje Resend az pri odesilani.
+APLIKACE_BLOK = (
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+    'style="border-collapse:collapse;margin:20px 0 0"><tr><td align="center" '
+    'style="font-family:Arial,Helvetica,sans-serif">'
+    '<a href="https://podhodnocenebyty.cz/app/prihlaseni?email={{{EMAIL}}}" '
+    'style="background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 26px;'
+    'border-radius:999px;font-weight:700;font-size:14px;display:inline-block;'
+    'font-family:Arial,Helvetica,sans-serif">Otevřít v aplikaci</a>'
+    '<p style="margin:8px 0 0;color:#9ca3af;font-size:11px;'
+    'font-family:Arial,Helvetica,sans-serif">Všechny byty přehledně a s historií — '
+    'e-mail už máte předvyplněný.</p>'
+    '</td></tr></table>'
+)
+
 UPGRADE_BLOK = (
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0;border-collapse:collapse"><tr><td style="background:linear-gradient(135deg,#0d9488,#22d3ee);border-radius:14px;padding:2px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><td style="background:#ffffff;border-radius:12px;padding:22px;font-family:Arial,sans-serif"><p style="margin:0 0 6px;font-size:11px;font-weight:800;color:#0d9488;letter-spacing:1px;text-transform:uppercase">Hledejte přesněji</p><p style="margin:0 0 14px;font-size:16px;font-weight:700;color:#0f172a">Chcete významně kvalitnější analýzu podle jednotlivých městských čtvrtí, lepší monitoring změn cen, pokrytí všech portálů a velmi brzy i další lokality mimo Prahu?</p><p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#475569">Upgradujte členství.</p><table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px"><tr><td style="padding:0 0 8px;width:22px;color:#0d9488;font-weight:700">✓</td><td style="padding:0 0 8px;font-size:13px;line-height:1.5;color:#475569"><strong>Detailní analýza cen</strong> podle jednotlivých čtvrtí</td></tr><tr><td style="padding:0 0 8px;width:22px;color:#0d9488;font-weight:700">✓</td><td style="padding:0 0 8px;font-size:13px;line-height:1.5;color:#475569"><strong>Rozbor důvodů nízké ceny</strong> — stav bytu, panelový dům, patro. A když důvod nenajdeme, řekneme vám to.</td></tr><tr><td style="padding:0 0 8px;width:22px;color:#0d9488;font-weight:700">✓</td><td style="padding:0 0 8px;font-size:13px;line-height:1.5;color:#475569"><strong>Bez družstevních bytů a ateliérů</strong>, u kterých je srovnání ceny za metr zavádějící</td></tr><tr><td style="padding:0 0 8px;width:22px;color:#0d9488;font-weight:700">✓</td><td style="padding:0 0 8px;font-size:13px;line-height:1.5;color:#475569"><strong>Pokrytí všech velkých realitních portálů</strong></td></tr><tr><td style="padding:0 0 8px;width:22px;color:#0d9488;font-weight:700">✓</td><td style="padding:0 0 8px;font-size:13px;line-height:1.5;color:#475569"><strong>Upozornění na zlevnění</strong> u bytů, které jsme vám poslali</td></tr><tr><td style="width:22px;color:#0d9488;font-weight:700">✓</td><td style="font-size:13px;line-height:1.5;color:#475569"><strong>Nedělní souhrn</strong> s desítkou nejlepších bytů týdne</td></tr></table><a href="https://podhodnocenebyty.cz/clenstvi?utm_source=email&utm_medium=email&utm_campaign=denni-report" style="background:#0d9488;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:999px;font-weight:700;font-size:14px;display:inline-block">Upgradovat členství</a><p style="margin:14px 0 0;font-size:11px;color:#94a3b8">Od 249 Kč měsíčně. Zrušit můžete kdykoliv.</p></td></tr></table></td></tr></table>'
 )
@@ -265,6 +291,7 @@ else:
         f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou · seřazeno podle odchylky od průměru</p>'
         "</div>"
         f"{karty}"
+        f"{APLIKACE_BLOK}"
         f"{UPGRADE_BLOK}"
         f"{PATICKA_PARTNERI}"
         '<div style="text-align:center;padding:16px">'
@@ -276,7 +303,9 @@ else:
     zprava["Subject"] = f"🏠 Nové byty Praha · {datum}"
     zprava["From"] = "realitybot@seznam.cz"
     zprava["To"] = "tomas.tuzar@seznam.cz"
-    zprava.attach(MIMEText(html_report, "html"))
+    # {{{EMAIL}}} doplnuje az Resend pri rozesilce. Tahle kopie jde primo
+    # pres SMTP, takze by se zastupny text ukazal tak, jak je — dosadime ho.
+    zprava.attach(MIMEText(html_report.replace("{{{EMAIL}}}", "tomas.tuzar@seznam.cz"), "html"))
 
     try:
         with smtplib.SMTP_SSL("smtp.email.cz", 465) as server:
