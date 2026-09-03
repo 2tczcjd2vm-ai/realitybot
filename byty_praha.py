@@ -132,7 +132,7 @@ def upgrade_blok(pocet):
         '<p style="margin:0 0 6px;font-size:11px;font-weight:800;color:#0d9488;letter-spacing:1px;text-transform:uppercase">O den napřed</p>'
         f'<p style="margin:0 0 12px;font-size:17px;font-weight:700;color:#0f172a;line-height:1.4">{kolik} platící členové už včera.</p>'
         '<p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#475569">'
-        'Bezplatná verze ukazuje byty s denním zpožděním. U bytu výrazně pod cenou může jít přitom o hodně.</p>'
+        'Bezplatná verze ukazuje byty s denním zpožděním a to jen v Praze.</p>'
         '<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px">'
         + _RADKY +
         '</table>'
