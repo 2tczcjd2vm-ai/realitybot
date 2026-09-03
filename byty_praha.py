@@ -106,7 +106,6 @@ _VYHODY = [
     ("Přesnější srovnání", "byt ve Střešovicích se poměřuje jen se Střešovicemi, ne s celou Prahou 6."),
     ("Proč je byt levný", "stav, panelový dům, patro. A když důvod nenajdeme, řekneme vám to."),
     ("Šest měst", "Praha, Brno, Ostrava, Plzeň, Liberec, Olomouc — vyberete si, která chcete."),
-    ("Bez družstevních bytů a ateliérů", "u nich je cena za metr zavádějící."),
     ("Upozornění na zlevnění", "u bytů, které jsme vám poslali, plus nedělní souhrn."),
 ]
 
