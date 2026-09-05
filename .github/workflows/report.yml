@@ -1,8 +1,14 @@
 name: Reality Report
 
+# Spousti se zvenci pres /api/spustit, ne planovacem GitHubu.
+#
+# Planovac tady byl a mel slouzit jako zaloha, jenze bot pak bezel dvakrat
+# denne: jednou nacas z externi sluzby a podruhe se zpozdenim odsud.
+# U placeneho reportu to odchytila pojistka posledni_report, u bezplatneho
+# ne — a 288 lidem chodil denni prehled dvakrat.
+#
+# Zaloha, ktera tise posila e-maily navic, je horsi nez zadna zaloha.
 on:
-  schedule:
-    - cron: '0 11 * * *'
   workflow_dispatch:
 
 jobs:
