@@ -117,6 +117,29 @@ def prehled_vcera():
         return None
 
 
+def projekt_banner():
+    """Prouzek s nabidkou developerskeho projektu, ze ktereho bereme provizi.
+
+    HTML se nesklada tady, ale stahuje se z webu (lib/projekt.ts). Duvod je
+    prozaicky: pri vymene projektu se meni texty i cisla a duplikat v Pythonu
+    by se driv nebo pozdeji rozesel s tim, co vidi platici clenove.
+
+    Kdyz se nenacte nebo zadny projekt neni aktivni, vrati prazdny retezec —
+    report kvuli nabidce padat nesmi.
+    """
+    try:
+        r = requests.get(
+            f"{WEB}/api/projekt-banner",
+            headers={"Authorization": f"Bearer {os.environ['BROADCAST_SECRET']}"},
+            timeout=20,
+        )
+        r.raise_for_status()
+        return r.json().get("html") or ""
+    except Exception as e:
+        print("Banner projektu se nenacetl: " + str(e))
+        return ""
+
+
 # Blok pod nalezenymi byty, ktery zve k placenemu clenstvi.
 #
 # Je to funkce, ne konstanta, protoze nejsilnejsi veta pracuje s poctem bytu
@@ -443,6 +466,7 @@ else:
     # Kolik bytu vcera nasla placena verze mimo Prahu. Pouziva se v upgrade
     # bloku; kdyz se nenacte, blok se vykresli bez teto vety.
     vcerejsek = prehled_vcera()
+    nabidka = projekt_banner()
 
     html_report = (
         "<!DOCTYPE html><html>"
@@ -458,6 +482,7 @@ else:
         f"{karty}"
         f"{APLIKACE_BLOK}"
         f"{upgrade_blok(len(pod_cenou), vcerejsek)}"
+        f"{nabidka}"
         f"{PATICKA_PARTNERI}"
         '<div style="text-align:center;padding:16px">'
         '<p style="margin:0;color:#9ca3af;font-size:11px">Odchylka = (cena/m² − průměr části Prahy) / průměr · Data ze Sreality</p>'
