@@ -93,6 +93,30 @@ APLIKACE_BLOK = (
     '</td></tr></table>'
 )
 
+def prehled_vcera():
+    """Kolik bytu vcera nasla placena verze a kde.
+
+    Slouzi k jedine vete v upgrade bloku, ale je to nejsilnejsi veta v celem
+    e-mailu: rika konkretni cislo z vcerejska misto obecneho slibu. Za 31. 8.
+    az 5. 9. pripadlo na Prahu 32 nalezu a mimo ni 57 — bezplatny odberatel
+    o vetsine ani nevi.
+
+    Kdyz se to nepovede nacist, vrati None a blok se vykresli bez teto vety.
+    Report kvuli marketingove vsuvce padat nesmi.
+    """
+    try:
+        r = requests.get(
+            f"{WEB}/api/prehled-vcera",
+            headers={"Authorization": f"Bearer {os.environ['BROADCAST_SECRET']}"},
+            timeout=20,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print("Prehled vcerejska se nenacetl: " + str(e))
+        return None
+
+
 # Blok pod nalezenymi byty, ktery zve k placenemu clenstvi.
 #
 # Je to funkce, ne konstanta, protoze nejsilnejsi veta pracuje s poctem bytu
@@ -119,11 +143,86 @@ _RADKY = "".join(
 )
 
 
-def upgrade_blok(pocet):
+def _tvar(n, jeden, dva, pet):
+    return jeden if n == 1 else (dva if n < 5 else pet)
+
+
+# Sesty pad nazvu mest. Seznam je uzavreny (mesta v MESTA), takze staci tabulka
+# — sklonovat cesky programove by bylo delsi i krehci nez sest radku.
+_KDE = {
+    "Praha": "Praze",
+    "Brno": "Brně",
+    "Ostrava": "Ostravě",
+    "Plzeň": "Plzni",
+    "Liberec": "Liberci",
+    "Olomouc": "Olomouci",
+}
+
+
+def pobidka_nahore(vcera):
+    """Uzky pruh hned pod hlavickou.
+
+    Cely upgrade blok je az pod vypisem bytu a vetsina lidi tam nedoscrolluje.
+    Tenhle pruh nese dve veci, ktere rozhoduji nejvic — cas a presnost vyberu —
+    a odkaz. Je nahore, takze ho uvidi i ten, kdo e-mail jen prolitne.
+
+    Vedle vypisu to dat nejde: e-mailovi klienti sloupce na mobilu skladaji
+    pod sebe, takze "bocni panel" by stejne skoncil az za byty.
+
+    Nemluvi o mestech zamerne. Lokality resi blok dole; tady jde o to, ze
+    placena verze hleda jinak a driv, coz plati i pro cistě prazskeho ctenare.
+    """
+    if not vcera or not vcera.get("celkem"):
+        return ""
+
+    n = vcera["celkem"]
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="border-collapse:collapse;margin:0 0 16px"><tr>'
+        '<td style="background:#0f172a;border-left:4px solid #22d3ee;border-radius:10px;'
+        'padding:15px 18px;font-family:Arial,sans-serif">'
+        f'<p style="margin:0 0 5px;font-size:15px;font-weight:700;color:#ffffff;line-height:1.45">'
+        f'Platící členové včera dostali {n} {_tvar(n, "byt", "byty", "bytů")}. '
+        f'O 24 hodin dřív než vy.</p>'
+        '<p style="margin:0;font-size:13px;line-height:1.55;color:#94a3b8">'
+        'A vybrané přesnější analýzou — podle konkrétní čtvrti, ne podle celé městské části. '
+        '<a href="https://podhodnocenebyty.cz/clenstvi?utm_source=email&utm_medium=email&utm_campaign=pruh-nahore" '
+        'style="color:#22d3ee;font-weight:700;text-decoration:none">Odemknout od 149 Kč &rarr;</a></p>'
+        '</td></tr></table>'
+    )
+
+
+def upgrade_blok(pocet, vcera=None):
     kolik = (
         "Tenhle byt viděli" if pocet == 1
         else f"Těchto {pocet} bytů viděli"
     )
+
+    # Nejsilnejsi cast: kolik bytu ctenar vcera vubec nedostal, protoze byly
+    # mimo Prahu. Ukazuje se jen kdyz takove byty opravdu byly.
+    navic = ""
+    if vcera and vcera.get("mimoPrahu"):
+        n = vcera["mimoPrahu"]
+        jmena = [_KDE.get(m["nazev"], m["nazev"]) for m in (vcera.get("mesta") or [])][:3]
+        kde = ", ".join(jmena[:-1]) + " a " + jmena[-1] if len(jmena) > 1 else (jmena[0] if jmena else "jiných městech")
+        sleva = vcera.get("nejlepsiOdchylka")
+        sleva_text = (
+            f" {'Byl' if n == 1 else 'Nejlevnější z nich byl'} "
+            f"<strong>{abs(sleva):.0f} % pod cenou</strong>."
+            if isinstance(sleva, (int, float)) else ""
+        )
+        navic = (
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border-collapse:collapse;margin:0 0 16px"><tr>'
+            '<td style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px 16px">'
+            f'<p style="margin:0;font-size:13px;line-height:1.6;color:#7c2d12">'
+            f'A k tomu <strong>{n} {_tvar(n, "byt", "byty", "bytů")} '
+            f'{_tvar(n, "byl", "byly", "bylo")} v {kde}</strong> — '
+            f'{_tvar(n, "ten se", "ty se", "ty se")} do bezplatné verze '
+            f'{_tvar(n, "nedostane", "nedostanou", "nedostanou")} vůbec.{sleva_text}</p>'
+            '</td></tr></table>'
+        )
+
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0;border-collapse:collapse"><tr>'
         '<td style="background:linear-gradient(135deg,#0d9488,#22d3ee);border-radius:14px;padding:2px">'
@@ -133,6 +232,7 @@ def upgrade_blok(pocet):
         f'<p style="margin:0 0 12px;font-size:17px;font-weight:700;color:#0f172a;line-height:1.4">{kolik} platící členové už včera.</p>'
         '<p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#475569">'
         'Bezplatná verze ukazuje byty s denním zpožděním a to jen v Praze.</p>'
+        + navic +
         '<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px">'
         + _RADKY +
         '</table>'
@@ -340,6 +440,10 @@ else:
             f'{odchylka_fmt}</div></div></div></a>'
         )
 
+    # Kolik bytu vcera nasla placena verze mimo Prahu. Pouziva se v upgrade
+    # bloku; kdyz se nenacte, blok se vykresli bez teto vety.
+    vcerejsek = prehled_vcera()
+
     html_report = (
         "<!DOCTYPE html><html>"
         '<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
@@ -350,9 +454,10 @@ else:
         f'<p style="margin:8px 0 0;color:#ede9fe;font-size:14px">{datum} · {len(pod_cenou)} bytů pod cenou · seřazeno podle odchylky od průměru</p>'
         '<p style="margin:10px 0 0;color:#ede9fe;font-size:12px;opacity:.85">Bezplatná verze ukazuje byty s denním zpožděním — platící členové je dostali včera.</p>' 
         "</div>"
+        f"{pobidka_nahore(vcerejsek)}"
         f"{karty}"
         f"{APLIKACE_BLOK}"
-        f"{upgrade_blok(len(pod_cenou))}"
+        f"{upgrade_blok(len(pod_cenou), vcerejsek)}"
         f"{PATICKA_PARTNERI}"
         '<div style="text-align:center;padding:16px">'
         '<p style="margin:0;color:#9ca3af;font-size:11px">Odchylka = (cena/m² − průměr části Prahy) / průměr · Data ze Sreality</p>'
