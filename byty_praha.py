@@ -2,6 +2,7 @@ import os
 import time
 import requests
 import re
+import statistics
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -288,6 +289,36 @@ prahy = {
     "Praha 10": 5010,
 }
 
+# Rozumne meze pro cenu za metr. Co je mimo, je chyba v inzeratu, ne trh.
+# 7. 9. 2026 mel jeden inzerat v Praze 9 uvedeno "2+1 3 m²" za 7 256 000 Kc,
+# tedy 2 418 667 Kc/m² — jediny takovy zaznam zvedl prumer cele mestske casti
+# o zhruba 37 tisic.
+CENA_M2_MIN = 30_000
+CENA_M2_MAX = 400_000
+
+# Nejmensi plocha, ktera jeste dava smysl. Pod tim jde skoro vzdy o preklep.
+PLOCHA_MIN = 15
+
+# Kolik inzeratu brat na vypocet obvykle ceny. Driv jich bylo 60 a nebyl to
+# nahodny vyber — sreality vraci sve vlastni razeni, ktere bylo plne malych
+# novostaveb 1+kk, a ty maji nejvyssi cenu za metr ze vsech.
+VZOREK_LIMIT = 500
+
+
+def cena_za_m2_inzeratu(inzerat):
+    """Cena za m². Sreality ji posilaji hotovou, regex je jen zachranna brzda."""
+    hotova = inzerat.get("price_czk_m2")
+    if hotova:
+        return float(hotova), None
+    cena = inzerat.get("price", 0)
+    m = re.search(r"(\d+)\s*m²", inzerat.get("advert_name", "") or "")
+    if m and cena and cena > 100000:
+        plocha = int(m.group(1))
+        if plocha > 0:
+            return cena / plocha, plocha
+    return None, None
+
+
 ceny_prahy = {}
 for nazev_prahy, district_id in prahy.items():
     url = "https://www.sreality.cz/api/v1/estates/search"
@@ -297,7 +328,7 @@ for nazev_prahy, district_id in prahy.items():
         "locality_district_id": district_id,
         "locality_country_id": 112,
         "locality_region_id": 10,
-        "limit": 60,
+        "limit": VZOREK_LIMIT,
         "offset": 0,
         "lang": "cs",
         "ownership": 1,
@@ -307,19 +338,28 @@ for nazev_prahy, district_id in prahy.items():
     response = requests.get(url, params=params, headers=headers)
     data = response.json()
     ceny_za_m2 = []
+    vyrazeno = 0
     for inzerat in data.get("results", []):
-        cena = inzerat.get("price", 0)
         nazev = inzerat.get("advert_name", "")
         if je_druzstevni(inzerat, nazev):
             continue
-        m = re.search(r"(\d+)\s*m²", nazev)
-        if m and cena and cena > 100000:
-            plocha = int(m.group(1))
-            if plocha > 0:
-                ceny_za_m2.append(cena / plocha)
+        c, plocha_z_nazvu = cena_za_m2_inzeratu(inzerat)
+        if c is None:
+            continue
+        if not (CENA_M2_MIN <= c <= CENA_M2_MAX):
+            vyrazeno += 1
+            continue
+        if plocha_z_nazvu is not None and plocha_z_nazvu < PLOCHA_MIN:
+            vyrazeno += 1
+            continue
+        ceny_za_m2.append(c)
     if ceny_za_m2:
-        ceny_prahy[nazev_prahy] = sum(ceny_za_m2) / len(ceny_za_m2)
-        print(f"  {nazev_prahy}: {ceny_prahy[nazev_prahy]:,.0f} Kč/m²")
+        # Median, ne prumer. Jeden penthouse nebo jeden preklep v plose posune
+        # prumer o desitky tisic, medianem nehnou.
+        ceny_prahy[nazev_prahy] = statistics.median(ceny_za_m2)
+        poznamka = f", vyřazeno {vyrazeno}" if vyrazeno else ""
+        print(f"  {nazev_prahy}: {ceny_prahy[nazev_prahy]:,.0f} Kč/m²"
+              f" (z {len(ceny_za_m2)} inzerátů{poznamka})")
 
 print()
 # Bezplatna verze ukazuje byty se zpozdenim jednoho dne.
@@ -457,7 +497,7 @@ else:
             f'<div style="color:#6b7280;font-size:12px;margin-bottom:4px">📍 {b["lokalita"]} · {b["cast_prahy"]}</div>'
             f'<div style="color:#6b7280;font-size:13px">💰 Cena: {cena_fmt}</div>'
             f'<div style="color:#6b7280;font-size:13px">📐 Cena/m²: {cena_m2_fmt}</div>'
-            f'<div style="color:#6b7280;font-size:13px">📊 Průměr {b["cast_prahy"]}: {prumer_fmt}</div>'
+            f'<div style="color:#6b7280;font-size:13px">📊 Obvyklá cena {b["cast_prahy"]}: {prumer_fmt}</div>'
             f'</div>'
             f'<div style="background:{barva};color:white;padding:8px 12px;border-radius:8px;font-weight:800;font-size:18px;white-space:nowrap;min-width:70px;text-align:center">'
             f'{odchylka_fmt}</div></div></div></a>'
