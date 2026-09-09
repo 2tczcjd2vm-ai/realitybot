@@ -36,6 +36,19 @@ MAX_STRAN = 5
 
 ZELENA_HRANICE = -10
 
+# Okno pro "nove inzeraty". Zamerne sirsi nez 24 hodin, ze dvou duvodu:
+#
+#  1. cas se pocita z datetime.now(), coz je na GitHub Actions UTC, kdezto
+#     sreality okno vyhodnocuji jinak. Mereni 9. 9. 2026: tentyz dotaz vratil
+#     s casem podle UTC 29 inzeratu, s casem podle Prahy 24 — tech pet navic
+#     uz v reportu bylo predchozi den.
+#  2. cron GitHubu nebezi presne; mezi behy bylo pozorovano 20,4 az 24 hodin.
+#
+# Uzke okno by pri zpozdeni bota inzeraty tise ZTRATILO, sirsi je jen zopakuje.
+# Duplicity odchyti evidence odeslanych inzeratu nize, ztracene byty by
+# nezachytilo nic — proto radsi sirsi.
+OKNO_HODIN = 30
+
 # Zkusebni beh: PB_NASUCHO=1 necha bota spocitat uplne vsechno, ale nic
 # neodesle — zadny e-mail, zadna rozesilka platicim, zadny zapis nalezu.
 #
@@ -517,7 +530,7 @@ for mesto in MESTA:
         mesto,
         sort="-date",
         price_to=CENA_MAX,
-        watchdog_last_changed_from=(datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S"),
+        watchdog_last_changed_from=(datetime.now() - timedelta(hours=OKNO_HODIN)).strftime("%Y-%m-%dT%H:%M:%S"),
     )
 
     for inzerat in inzeraty:
@@ -671,6 +684,38 @@ if podezrele:
     for b in podezrele:
         print(f"  {b['odchylka']:+6.1f}%  {b['ctvrt']} · {b['cena']/1e6:.2f} mil · {b['odkaz']}")
     pod_cenou = [b for b in pod_cenou if b["odchylka"] >= PODEZRELE_LEVNE]
+
+# Co uz jednou odeslo, podruhe nejde.
+#
+# Okno je zamerne sirsi nez rozestup behu (viz OKNO_HODIN), takze se inzeraty
+# z prekryvu vraceji znovu. Tady se odfiltruji podle evidence, kterou vede
+# /api/nove-inzeraty — tataz tabulka, jakou uz pouzivaji Bezrealitky, jen pod
+# vlastnim zdrojem.
+#
+# Eviduje se az to, co opravdu posilame, ne vsechno stazene. Byt, ktery je
+# dnes o dve procenta nad hranici a zitra pod ni spadne, tak o svou sanci
+# neprijde.
+if NASUCHO:
+    print("NASUCHO: evidence odeslaných inzerátů se přeskakuje")
+elif pod_cenou:
+    try:
+        r = requests.post(
+            f"{WEB}/api/nove-inzeraty",
+            json={"zdroj": "report-pro",
+                  "hash_ids": [b["hash_id"] for b in pod_cenou],
+                  "seed": False},
+            headers={"Authorization": f"Bearer {broadcast_secret}"},
+            timeout=60,
+        )
+        r.raise_for_status()
+        nove = set(r.json().get("nove", []))
+        opakovane = len(pod_cenou) - len(nove)
+        if opakovane:
+            print(f"Vyřazeno {opakovane} bytů, které už v reportu byly dřív.")
+        pod_cenou = [b for b in pod_cenou if b["hash_id"] in nove]
+    except Exception as e:
+        # Radsi poslat neco dvakrat nez neposlat nic.
+        print("CHYBA evidence odeslaných: " + str(e) + " — pokračuji bez ní")
 
 # Poslední síto: u bytů, které se chystáme poslat, vyřadit družstva a ateliéry
 # a sesbírat důvody, proč je byt levnější než okolí.
