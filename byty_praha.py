@@ -94,6 +94,12 @@ APLIKACE_BLOK = (
     '</td></tr></table>'
 )
 
+ODKAZ_ODEMKNOUT = (
+    "https://podhodnocenebyty.cz/clenstvi"
+    "?utm_source=email&utm_medium=email&utm_campaign=zamceny-byt"
+)
+
+
 def prehled_vcera():
     """Kolik bytu vcera nasla placena verze a kde.
 
@@ -472,6 +478,34 @@ else:
     print(f"Pod cenou: {len(pod_cenou)} z {len(byty)} novych bytu.")
 
     datum = datetime.now().strftime("%d. %m. %Y")
+
+    # Nejlepsi nalezy dne se v bezplatne verzi zamknou. Je to jediny duvod,
+    # proc si ji nekdo zaplati — dokud verze zdarma ukazuje i ty nejvetsi
+    # slevy, nema clovek co ziskat.
+    #
+    # Z parametru nesmi jit byt poznat: skryva se nazev, ctvrt i cena.
+    # Zustava jen odchylka, protoze ta laka a zaroven byt neidentifikuje.
+    #
+    # Zamykaji se dva byty, ne tri, a viditelne zustavaji aspon dva.
+    #
+    # Vychazi to z 39 dni realnych reportu: pocet nalezu kolisa od 1 do 12
+    # (median 6). Pri "nechat aspon tri videt" se zamek vubec neobjevil
+    # v 10 dnech z 39 — paywall, ktery ctvrtinu casu zmizi, nikoho nenauci,
+    # ze neco existuje. Takhle je videt 34 dni z 39 a zamyka pritom MIN
+    # obsahu (26 % misto 32 %).
+    #
+    # Dva staci: zamykaji se dve nejvetsi slevy dne. Treti v poradi uz neni
+    # ta polozka, kvuli ktere si clovek predplatne koupi — sebrat ji stoji
+    # sympatie a skoro nic nepridá.
+    ZAMKNOUT_MAX = 2
+    MIN_VIDITELNYCH = 2
+    pod_cenou.sort(key=lambda b: b["odchylka"])
+    zamcenych = min(ZAMKNOUT_MAX, max(0, len(pod_cenou) - MIN_VIDITELNYCH))
+    for i, b in enumerate(pod_cenou):
+        # Priznak putuje i do /api/ingest-byty, takze aplikace zamyka tytez
+        # byty jako e-mail. Bez toho by si je clovek proste otevrel v appce.
+        b["zamceno"] = i < zamcenych
+
     karty = ""
 
     for b in pod_cenou:
@@ -487,6 +521,32 @@ else:
         cena_fmt = f"{b['cena']:,.0f} Kč".replace(",", " ")
         cena_m2_fmt = f"{b['cena_za_m2']:,.0f} Kč/m²".replace(",", " ")
         prumer_fmt = f"{b['prumer_prahy']:,.0f} Kč/m²".replace(",", " ")
+
+        if b["zamceno"]:
+            # Zamerne se nepouziva CSS filter: blur — Gmail ani Outlook ho
+            # nepodporuji a byt by zustal citelny. Text se proto nahrazuje
+            # blokovymi znaky, ktere vypadaji stejne ve vsech klientech.
+            karty += (
+                f'<a href="{ODKAZ_ODEMKNOUT}" style="text-decoration:none;color:inherit" target="_blank">'
+                f'<div style="background:#f1f5f9;border-radius:10px;padding:16px;margin-bottom:12px;'
+                f'border-left:4px solid #94a3b8;border:1px dashed #cbd5e1">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+                f'<div style="flex:1;padding-right:12px">'
+                f'<div style="font-weight:700;font-size:15px;color:#94a3b8;margin-bottom:6px;letter-spacing:1px">▒▒▒▒▒▒▒▒ ▒▒▒▒▒</div>'
+                f'<div style="color:#cbd5e1;font-size:12px;margin-bottom:4px;letter-spacing:1px">📍 ▒▒▒▒▒▒ · ▒▒▒▒▒▒▒</div>'
+                f'<div style="color:#cbd5e1;font-size:13px;letter-spacing:1px">💰 Cena: ▒ ▒▒▒ ▒▒▒ Kč</div>'
+                f'<div style="color:#cbd5e1;font-size:13px;letter-spacing:1px">📐 Cena/m²: ▒▒ ▒▒▒ Kč/m²</div>'
+                f'</div>'
+                f'<div style="text-align:right">'
+                f'<div style="background:{barva};color:white;padding:6px 12px;border-radius:8px;'
+                f'font-weight:700;font-size:15px">{odchylka_fmt}</div>'
+                f'<div style="color:#64748b;font-size:11px;margin-top:6px">🔒 zamčeno</div>'
+                f'</div></div>'
+                f'<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;'
+                f'color:#0d9488;font-size:13px;font-weight:700">Odemknout od 149 Kč &rarr;</div>'
+                f'</div></a>'
+            )
+            continue
 
         karty += (
             f'<a href="{b["odkaz"]}" style="text-decoration:none;color:inherit;" target="_blank">'
