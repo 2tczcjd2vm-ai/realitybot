@@ -542,8 +542,12 @@ else:
                 f'font-weight:700;font-size:15px">{odchylka_fmt}</div>'
                 f'<div style="color:#64748b;font-size:11px;margin-top:6px">🔒 zamčeno</div>'
                 f'</div></div>'
-                f'<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;'
-                f'color:#0d9488;font-size:13px;font-weight:700">Odemknout od 149 Kč &rarr;</div>'
+                f'<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0">'
+                f'<div style="color:#0d9488;font-size:13px;font-weight:700">'
+                f'Odemknout denně 2 nejlepší nabídky &rarr;</div>'
+                f'<div style="color:#64748b;font-size:12px;margin-top:3px">'
+                f'Uvidíte je o 24 hodin dřív. Od 149 Kč měsíčně.</div>'
+                f'</div>'
                 f'</div></a>'
             )
             continue
