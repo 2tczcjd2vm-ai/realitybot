@@ -95,8 +95,11 @@ APLIKACE_BLOK = (
 )
 
 ODKAZ_ODEMKNOUT = (
-    "https://podhodnocenebyty.cz/clenstvi"
-    "?utm_source=email&utm_medium=email&utm_campaign=zamceny-byt"
+    # Rovnou na tarif Jedno mesto s predvybranou Prahou: bezplatny report je
+    # prazsky a vsichni tri platici od zavedeni zamku (10.–15. 9. 2026) si
+    # koupili prave Prahu za 149 Kc. Prehled vsech tarifu byl krok navic.
+    "https://podhodnocenebyty.cz/clenstvi/mesto"
+    "?mesto=praha&utm_source=email&utm_medium=email&utm_campaign=zamceny-byt"
 )
 
 
@@ -216,8 +219,8 @@ def pobidka_nahore(vcera):
         f'O 24 hodin dřív než vy.</p>'
         '<p style="margin:0;font-size:13px;line-height:1.55;color:#94a3b8">'
         'A vybrané přesnější analýzou — podle konkrétní čtvrti, ne podle celé městské části. '
-        '<a href="https://podhodnocenebyty.cz/clenstvi?utm_source=email&utm_medium=email&utm_campaign=pruh-nahore" '
-        'style="color:#22d3ee;font-weight:700;text-decoration:none">Odemknout od 149 Kč &rarr;</a></p>'
+        '<a href="https://podhodnocenebyty.cz/clenstvi/mesto?mesto=praha&utm_source=email&utm_medium=email&utm_campaign=pruh-nahore" '
+        'style="color:#22d3ee;font-weight:700;text-decoration:none">Odemknout Prahu za 149 Kč &rarr;</a></p>'
         '</td></tr></table>'
     )
 
@@ -266,9 +269,9 @@ def upgrade_blok(pocet, vcera=None):
         '<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px">'
         + _RADKY +
         '</table>'
-        '<a href="https://podhodnocenebyty.cz/clenstvi?utm_source=email&utm_medium=email&utm_campaign=denni-report" '
+        '<a href="https://podhodnocenebyty.cz/clenstvi/mesto?mesto=praha&utm_source=email&utm_medium=email&utm_campaign=denni-report" '
         'style="background:#0d9488;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:999px;'
-        'font-weight:700;font-size:14px;display:inline-block">Chci byty ihned</a>'
+        'font-weight:700;font-size:14px;display:inline-block">Odemknout Prahu za 149 Kč</a>'
         '<p style="margin:14px 0 0;font-size:11px;color:#94a3b8">'
         'Od 149 Kč měsíčně za jedno město, 249 Kč za všech šest — necelých 5 Kč denně. '
         'Zrušit můžete kdykoliv.</p>'
@@ -546,7 +549,7 @@ else:
                 f'<div style="color:#0d9488;font-size:13px;font-weight:700">'
                 f'Odemknout denně 2 nejlepší nabídky &rarr;</div>'
                 f'<div style="color:#64748b;font-size:12px;margin-top:3px">'
-                f'Uvidíte je o 24 hodin dřív. Od 149 Kč měsíčně.</div>'
+                f'Uvidíte je o 24 hodin dřív. Praha za 149 Kč měsíčně.</div>'
                 f'</div>'
                 f'</div></a>'
             )
