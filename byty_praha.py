@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 
 headers = {"User-Agent": "Mozilla/5.0"}
 
+# Odkud se tahaji data z aplikace (prehled vcerejska, prouzek s projekty).
+WEB = os.environ.get("PB_API_BASE", "https://podhodnocenebyty.cz")
+
 
 def osobni_vlastnictvi(hash_id):
     """Ověří v detailu inzerátu, že jde o osobní vlastnictví.
