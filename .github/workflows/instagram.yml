@@ -1,0 +1,58 @@
+name: Instagram
+
+# Dva prispevky denne: rano tip z analyzy, vecer stridajici se rubrika.
+#
+# Proc planovac GitHubu, kdyz boti ho kvuli zpozdovani nepouzivaji: Vercel ma
+# na hobby tarifu dve cron ulohy a obe uz patri dennim reportum. U reportu
+# zalezi na minutach, u instagramoveho prispevku ne — kdyz vyjde v 9:20 misto
+# v 9:00, nikdo si toho nevsimne.
+#
+# Kazdy cas je uvedeny DVAKRAT, protoze cron GitHubu zna jen UTC a Praha meni
+# cas. V lete plati prvni radek, v zime druhy; ten druhy pokus zahodi pojistka
+# v /api/instagram/publikovat, ktera odmita postovat driv nez sest hodin po
+# poslednim prispevku. Prepisovat soubor dvakrat rocne je horsi nez jedno
+# volani navic, ktere stejne nic neudela.
+
+on:
+  workflow_dispatch:
+    inputs:
+      kdy:
+        description: "rano nebo vecer"
+        required: true
+        default: rano
+        type: choice
+        options: [rano, vecer]
+  schedule:
+    - cron: "0 7 * * *"   # 9:00 letniho casu
+    - cron: "0 8 * * *"   # 9:00 zimniho casu
+    - cron: "30 16 * * *" # 18:30 letniho casu
+    - cron: "30 17 * * *" # 18:30 zimniho casu
+
+jobs:
+  prispevek:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publikovat
+        env:
+          BROADCAST_SECRET: ${{ secrets.BROADCAST_SECRET }}
+          # Rucni spusteni si cast dne vybira samo, planovac ji pozna z hodiny.
+          KDY: ${{ github.event.inputs.kdy }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KDY}" ]; then
+            hodina=$(date -u +%H)
+            if [ "$hodina" -lt 12 ]; then KDY=rano; else KDY=vecer; fi
+          fi
+          echo "Část dne: $KDY"
+
+          odpoved=$(curl -sS -X POST https://podhodnocenebyty.cz/api/instagram/publikovat \
+            -H "Authorization: Bearer $BROADCAST_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "{\"kdy\":\"$KDY\"}")
+          echo "$odpoved"
+
+          # Krok musi spadnout, kdyz Instagram prispevek odmitne — jinak by se
+          # chyba schovala do zeleneho behu a nikdo by si jí nevsiml.
+          case "$odpoved" in
+            *'"ok":false'*) echo "::error::Publikace selhala"; exit 1 ;;
+          esac
