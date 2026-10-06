@@ -2,14 +2,13 @@ name: Instagram
 
 # Tri prispevky denne: rano tip z analyzy, v poledne a vecer rubriky z rotace.
 #
-# Vola se KAZDOU HODINU a o tom, jestli se ma postovat, rozhoduje endpoint
-# podle hodiny v Praze. Duvod: planovac GitHubu strili nepresne — 5. 10. 2026
-# se opozdil o skoro sest hodin a jeden beh vynechal uplne. Pri hodinovem
-# volani zpozdeny beh jen dozene okno misto toho, aby prispevek propadl,
-# a odpada i rucni resení letniho casu.
+# Spousti se RUCNE. Pravidelne volani obstarava cron-job.org, ktery uz pousti
+# i oba boty — kazdou hodinu zavola /api/instagram/publikovat a o tom, jestli
+# je zrovna okno, rozhodne endpoint podle casu v Praze.
 #
-# Vetsina behu neudela nic a skonci hlaskou "mimo cas pro prispevek".
-# To je v poradku, je to levnejsi nez zmeskany prispevek.
+# Planovac GitHubu je tu zamerne vypnuty: 5. 10. 2026 se opozdil o skoro sest
+# hodin a nasledujici den zahodil pet behu po sobe. Jako zaloha by nepomohl
+# a jen by pridaval volani navic.
 
 on:
   workflow_dispatch:
@@ -20,12 +19,6 @@ on:
         default: auto
         type: choice
         options: [auto, rano, poledne, vecer]
-  schedule:
-    # Kazdou hodinu; okno vybere endpoint podle casu v Praze.
-    - cron: "0 * * * *"
-    # Okna zacinaji v celou a v 18:30 — pulhodinovy beh navic, aby vecerni
-    # prispevek nemusel cekat do 19:00.
-    - cron: "30 * * * *"
 
 jobs:
   prispevek:
