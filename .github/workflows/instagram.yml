@@ -2,16 +2,14 @@ name: Instagram
 
 # Tri prispevky denne: rano tip z analyzy, v poledne a vecer rubriky z rotace.
 #
-# POZOR: tohle je jen ZALOHA. Planovac GitHubu se 5. 10. 2026 opozdil o skoro
-# sest hodin a ranni beh vynechal uplne — stejny duvod, proc uz boti bezi
-# z externi kalendarni sluzby. Hlavni spoustec jsou tri volani GET na
-# /api/instagram/publikovat?klic=...&kdy=rano|poledne|vecer, nastavena tam.
+# Vola se KAZDOU HODINU a o tom, jestli se ma postovat, rozhoduje endpoint
+# podle hodiny v Praze. Duvod: planovac GitHubu strili nepresne — 5. 10. 2026
+# se opozdil o skoro sest hodin a jeden beh vynechal uplne. Pri hodinovem
+# volani zpozdeny beh jen dozene okno misto toho, aby prispevek propadl,
+# a odpada i rucni resení letniho casu.
 #
-# Kazdy cas je uvedeny DVAKRAT, protoze cron GitHubu zna jen UTC a Praha meni
-# cas. V lete plati prvni radek, v zime druhy; ten druhy pokus zahodi pojistka
-# v /api/instagram/publikovat, ktera odmita postovat prilis brzy po poslednim
-# prispevku. Prepisovat soubor dvakrat rocne je horsi nez jedno volani navic,
-# ktere stejne nic neudela.
+# Vetsina behu neudela nic a skonci hlaskou "mimo cas pro prispevek".
+# To je v poradku, je to levnejsi nez zmeskany prispevek.
 
 on:
   workflow_dispatch:
@@ -23,12 +21,11 @@ on:
         type: choice
         options: [rano, poledne, vecer]
   schedule:
-    - cron: "0 7 * * *"   # 9:00 letniho casu
-    - cron: "0 8 * * *"   # 9:00 zimniho casu
-    - cron: "0 11 * * *"  # 13:00 letniho casu
-    - cron: "0 12 * * *"  # 13:00 zimniho casu
-    - cron: "30 16 * * *" # 18:30 letniho casu
-    - cron: "30 17 * * *" # 18:30 zimniho casu
+    # Kazdou hodinu; okno vybere endpoint podle casu v Praze.
+    - cron: "0 * * * *"
+    # Okna zacinaji v celou a v 18:30 — pulhodinovy beh navic, aby vecerni
+    # prispevek nemusel cekat do 19:00.
+    - cron: "30 * * * *"
 
 jobs:
   prispevek:
@@ -37,17 +34,12 @@ jobs:
       - name: Publikovat
         env:
           BROADCAST_SECRET: ${{ secrets.BROADCAST_SECRET }}
-          # Rucni spusteni si cast dne vybira samo, planovac ji pozna z hodiny.
+          # Rucni spusteni si cast dne vybira samo, planovac ji necha na endpointu.
           KDY: ${{ github.event.inputs.kdy }}
         run: |
           set -euo pipefail
-          if [ -z "${KDY}" ]; then
-            hodina=$(date -u +%H)
-            if   [ "$hodina" -lt 10 ]; then KDY=rano
-            elif [ "$hodina" -lt 14 ]; then KDY=poledne
-            else                            KDY=vecer
-            fi
-          fi
+          # Prazdne = at si cast dne urci endpoint podle hodiny v Praze.
+          KDY="${KDY:-auto}"
           echo "Část dne: $KDY"
 
           odpoved=$(curl -sS -X POST https://podhodnocenebyty.cz/api/instagram/publikovat \
