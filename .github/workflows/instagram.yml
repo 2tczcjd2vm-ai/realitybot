@@ -15,11 +15,11 @@ on:
   workflow_dispatch:
     inputs:
       kdy:
-        description: "cast dne"
+        description: "cast dne (auto = podle hodiny v Praze)"
         required: true
-        default: rano
+        default: auto
         type: choice
-        options: [rano, poledne, vecer]
+        options: [auto, rano, poledne, vecer]
   schedule:
     # Kazdou hodinu; okno vybere endpoint podle casu v Praze.
     - cron: "0 * * * *"
