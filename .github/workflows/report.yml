@@ -36,3 +36,12 @@ jobs:
       - run: python cinzaky_kraje.py
         env:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      # Poptavka klienta na dum Turnov/Liberec. Nove se nepozna casovym
+      # oknem, ale evidenci odeslanych (BROADCAST_SECRET), takze na poradi
+      # ani zpozdeni behu nezalezi.
+      - run: python poptavka_dum_turnov.py
+        env:
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          BROADCAST_SECRET: ${{ secrets.BROADCAST_SECRET }}
+          REPORT_FROM: ${{ secrets.REPORT_FROM }}
+          REPORT_TO: ${{ secrets.REPORT_TO }}
